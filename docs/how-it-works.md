@@ -27,7 +27,8 @@ Every run writes to `C:\ProgramData\deskside\data\runs\<UTC time>-<kind>\`:
 - `summary.md`: the findings as plain sentences, grouped *Fix now*, *Fix soon*, *Nice to have*, *Good to know*.
 - `transcript.txt`, and `undo.json` for change runs.
 
-The console pulls run folders into the private records store and deletes them from the PC.
+The console copies run folders into the private records store. Diagnose runs are then deleted from the PC; change runs
+stay, because their `undo.json` and backups are what undo reads there.
 
 ## The catalog
 

@@ -46,5 +46,7 @@ devices/<alias>/health  the health sweep's records
 `health/Invoke-HealthSweep.ps1` runs beside the MeshCentral server on a schedule. For each device in the group it asks
 the agent (MeshCentral's run-command, with the automation login) to run the installed read-only diagnostics and return
 the record, writes one record per PC per run into the records store, and pushes a status to an uptime monitor: up when
-the sweep ran and nothing needs attention, down with a reason when a disk is failing, protection is off, updates or
-backups have stopped for three weeks, or a PC hasn't been seen for a month.
+the sweep ran and nothing needs attention, down with a reason when a disk is failing or full, protection is off,
+Windows or app updates have stopped for three weeks, no restore point has been made for a month, an unexpected
+remote-control app appears, or a PC hasn't been seen for a month. The agent runs the check as SYSTEM, so per-user state
+(OneDrive folder backup, File History) is left to the console's own diagnose runs.

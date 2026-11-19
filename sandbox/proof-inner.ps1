@@ -38,8 +38,7 @@ Start-Transcript "$out\transcript.txt" | Out-Null
 $env:DESKSIDE_SANDBOX_PROOF = '1'
 if ($cfg.ref) { $env:DESKSIDE_REF = $cfg.ref }
 
-# --- 1. The one-line bootstrap ------------------------------------------------------------------------------------
-Invoke-Step 'bootstrap' {
+function Invoke-Bootstrap {
     if ($cfg.source -eq 'local') {
         $env:DESKSIDE_SOURCE_ZIP = 'C:\in\deskside.zip'
         Invoke-Expression (Get-Content 'C:\in\bootstrap.ps1' -Raw)
@@ -49,6 +48,23 @@ Invoke-Step 'bootstrap' {
         irm "https://raw.githubusercontent.com/coltonbearden/deskside/$($cfg.ref)/bootstrap.ps1" | iex
     }
 }
+
+# --- 0. A work or school PC: report only, nothing written ---------------------------------------------------------
+Invoke-Step 'managed-stop' {
+    # Plant an active enrollment from a provider that isn't one of Windows' built-in ones, as Intune's would be.
+    $key = 'HKLM:\SOFTWARE\Microsoft\Enrollments\' + [guid]::NewGuid().ToString().ToUpper()
+    New-Item -Path $key -Force | Out-Null
+    New-ItemProperty -Path $key -Name ProviderID -Value 'MS DM Server' -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $key -Name EnrollmentState -Value 1 -PropertyType DWord -Force | Out-Null
+    try { $text = Invoke-Bootstrap *>&1 | Out-String } finally { Remove-Item -Path $key -Recurse -Force }
+    Assert-That ($text -match 'belongs to a work or school') 'no work-or-school notice'
+    Assert-That ($text -match 'Fix now') 'no on-screen report'
+    Assert-That (-not (Test-Path 'C:\ProgramData\deskside')) 'C:\ProgramData\deskside was created'
+    'report shown on screen; nothing written; enrollment removed again'
+}
+
+# --- 1. The one-line bootstrap ------------------------------------------------------------------------------------
+Invoke-Step 'bootstrap' { Invoke-Bootstrap }
 $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User') + ";$env:LOCALAPPDATA\Microsoft\WindowsApps"
 Import-Module (Join-Path $app 'scripts\common\Deskside.Common.psm1') -Force
 
@@ -111,6 +127,34 @@ Invoke-Step 'idempotent' {
     $applied = @($rec.changes | Where-Object { $_.result -eq 'applied' }).Count
     Assert-That ($applied -eq 0) "second run applied $applied item(s)"
     "second run changed nothing"
+}
+
+Invoke-Step 'remove-marked-app' {
+    # A change list with one removal marked yes (VLC stands in for trialware), applied by Remove-Apps.ps1.
+    $list = [ordered]@{ schema = 'deskside.changelist/v1'; items = @([ordered]@{ kind = 'removal'; id = 'VLC media player'; title = 'Remove VLC media player'; why = 'proof'; verdict = 'recommended'; decision = 'yes' }) }
+    $path = Join-Path $env:TEMP 'proof-changelist.json'
+    (ConvertTo-Json -InputObject $list -Depth 4) | Set-Content $path
+    & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'scripts\onboard\Remove-Apps.ps1') -ChangeList $path | Out-Null
+    $w = Get-WingetPath
+    & $w list --id VideoLAN.VLC -e --source winget --accept-source-agreements --disable-interactivity *> $null
+    Assert-That ($LASTEXITCODE -ne 0) 'VLC is still installed'
+    'the marked app was removed'
+}
+Invoke-Step 'problem-flow' {
+    & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'scripts\onboard\Start-Onboarding.ps1') -Flow Problem -Confirmed | Out-Null
+    Assert-That ($LASTEXITCODE -eq 0) "exit $LASTEXITCODE"
+    $d = @(Get-ChildItem 'C:\ProgramData\deskside\data\runs' -Directory -Filter '*-diagnose').Count
+    "problem flow ran; $d diagnose runs in all"
+}
+Invoke-Step 'power-profile' {
+    & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'scripts\install\Install-Profile.ps1') -ProfileName power | Out-Null
+    $w = Get-WingetPath
+    $missing = @()
+    foreach ($id in 'Microsoft.PowerShell', 'Microsoft.WindowsTerminal', 'Git.Git') { & $w list --id $id -e --source winget --accept-source-agreements --disable-interactivity *> $null; if ($LASTEXITCODE -ne 0) { $missing += $id } }
+    $prof = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\Microsoft.PowerShell_profile.ps1'
+    Assert-That ($missing.Count -eq 0) ('missing: ' + ($missing -join ', '))
+    Assert-That (Test-Path $prof) 'PowerShell profile not copied'
+    'PowerShell 7, Windows Terminal, Git and the profile are in place'
 }
 
 # --- 3. Remote help -----------------------------------------------------------------------------------------------

@@ -15,6 +15,7 @@ the Sandbox's logon command and writes one JSON line per step.
 
 | Step | What it proves |
 |---|---|
+| managed-stop | with an MDM enrollment planted, the one-liner shows a report on screen and writes nothing (no `C:\ProgramData\deskside`) |
 | bootstrap | the one-liner: work-or-school check, deskside in place, consent, diagnose, onboarding with the everyone profile (proof mode answers the prompts; it only works as the Sandbox's own account) |
 | records | every run left a `deskside.record/v1` record |
 | winget | winget, missing in a fresh Sandbox, was installed by Microsoft's documented repair |
@@ -24,6 +25,9 @@ the Sandbox's logon command and writes one JSON line per step.
 | wau-task | Winget-AutoUpdate's scheduled task exists |
 | undo-settings | a setting is applied, undone, undone again harmlessly, and re-applied |
 | idempotent | running the baseline a second time changes nothing |
+| remove-marked-app | an app marked yes on a change list is removed |
+| problem-flow | `Start-Onboarding -Flow Problem` runs end to end |
+| power-profile | the power profile adds PowerShell 7, Windows Terminal, Git and the PowerShell profile |
 | consent-remote | the owner's yes to remote help is recorded |
 | loopback-ssh | sshd listens on 127.0.0.1 only |
 | ssh-login | the helper's key signs in; a password sign-in is refused |

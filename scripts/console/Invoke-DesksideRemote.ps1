@@ -8,7 +8,8 @@
     1. Checks devices.json for the owner's remote consent.
     2. Opens the port map (MeshCmd route) to the PC's 127.0.0.1:22.
     3. Runs the script with Windows PowerShell on the PC (deskside lives in C:\ProgramData\deskside\app there).
-    4. Copies new run folders back to <records>\devices\<alias>\runs\ with scp, then deletes them from the PC.
+    4. Copies new run folders back to <records>\devices\<alias>\runs\ with scp. Diagnose runs are then deleted from the
+       PC; change runs stay there too, because undo reads their undo.json on the PC.
     5. Closes the port map.
     On screen: the script's own counts-only output. Names and app lists stay in the records.
 
@@ -59,7 +60,9 @@ try {
     $scpArgs = @('-P', $route.LocalPort) + ($ssh | Select-Object -Skip 2) + @('-r')
     foreach ($n in $new) {
         & scp.exe @scpArgs "${target}:C:/ProgramData/deskside/data/runs/$n" $dest
-        if ($LASTEXITCODE -eq 0 -and -not $KeepOnPc) { & ssh.exe @ssh $target "Remove-Item -LiteralPath 'C:\ProgramData\deskside\data\runs\$n' -Recurse -Force" }
+        # Only read-only runs leave the PC. A change run keeps its folder there: its undo.json and backups are what
+        # Undo-DesksideRun.ps1 reads on the PC.
+        if ($LASTEXITCODE -eq 0 -and -not $KeepOnPc -and $n -like '*-diagnose') { & ssh.exe @ssh $target "Remove-Item -LiteralPath 'C:\ProgramData\deskside\data\runs\$n' -Recurse -Force" }
     }
     Write-Information "Brought back $($new.Count) run(s) to the records store." -InformationAction Continue
     if ($code -ne 0) { throw "The script on the PC exited with $code." }

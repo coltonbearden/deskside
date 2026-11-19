@@ -24,8 +24,8 @@
     Return the record and summary paths (used by Start-Onboarding.ps1).
 
 .PARAMETER EmitJson
-    Also print one line of compact JSON (findings and the health-relevant values, no app lists or names) for the
-    health sweep, which reads it through MeshCentral's run-command.
+    Print one line of compact JSON (findings and the health-relevant values, no app lists or names) for the health
+    sweep, which reads it through MeshCentral's run-command. Nothing is kept on the PC.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\scripts\diagnose\Invoke-Diagnose.ps1
@@ -121,7 +121,7 @@ function Get-StoreApp {
 }
 
 $managed = Test-ManagedDevice
-if ($ScreenOnly) { $run = New-DesksideRun -Kind 'diagnose' -OutputDirectory (Join-Path ([IO.Path]::GetTempPath()) ('deskside-' + [guid]::NewGuid())) -NoTranscript }
+if ($ScreenOnly -or $EmitJson) { $run = New-DesksideRun -Kind 'diagnose' -OutputDirectory (Join-Path ([IO.Path]::GetTempPath()) ('deskside-' + [guid]::NewGuid())) -NoTranscript }
 else { $run = New-DesksideRun -Kind 'diagnose' -OutputDirectory $OutputDirectory }
 $isAdmin = Test-IsAdministrator
 $run.Data['managed'] = [ordered]@{ isManaged = $managed.IsManaged; reasons = $managed.Reasons }
@@ -462,5 +462,8 @@ if ($EmitJson) {
     if ($run.Data['security']) { $pick['security'] = [ordered]@{ defender = $run.Data['security'].defender; firewall = $run.Data['security'].firewall } }
     $compact = [ordered]@{ schema = 'deskside.health/v1'; runId = $run.Id; finishedUtc = (Get-Date).ToUniversalTime().ToString('o'); counts = $out.Counts; findings = $run.Findings.ToArray(); data = $pick }
     Write-Output ('DESKSIDE-HEALTH ' + (ConvertTo-Json -InputObject $compact -Depth 6 -Compress))
+    # The sweep keeps its own copy in the records store; nothing stays on the PC.
+    Remove-Item -LiteralPath $run.Folder -Recurse -Force -ErrorAction SilentlyContinue
+    return
 }
 if ($PassThru) { $out }

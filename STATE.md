@@ -28,7 +28,7 @@ Windows Sandbox can't show these, so they're covered by mocked tests until the f
 Defender status and PUA blocking, BitLocker or device encryption and its recovery key, battery wear, Windows Update
 history on a long-lived PC, OneDrive folder backup, Microsoft-account detection, the Store app list, WSL (no nested
 virtualization), restarts, Windows' own OpenSSH optional feature (Sandbox uses the winget fallback), and the
-work-or-school stop on a real Entra-joined or MDM-enrolled PC.
+work-or-school stop on a real Entra-joined or domain-joined PC (the Sandbox proof covers an MDM enrollment).
 
 ## Open issues
 

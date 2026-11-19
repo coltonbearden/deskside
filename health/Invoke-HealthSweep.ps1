@@ -98,10 +98,16 @@ try {
                 if ($hit) { $problems.Add("$label`: $($r.message)") }
             }
         } else {
-            $newest = Get-ChildItem $dir -Filter *.json -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
-            $age = $null
-            if ($newest) { $age = ((Get-Date).ToUniversalTime() - [datetime]::ParseExact($newest.BaseName, 'yyyyMMddTHHmmssZ', $null)).TotalDays }
-            if ($null -eq $age -or $age -gt $alerts.notSeenDays) { $problems.Add("$label`: not seen for $($alerts.notSeenDays) days") }
+            # Age from the newest record, or from when the sweep first saw the device (first-seen.txt).
+            $newest = Get-ChildItem $dir -Filter '*.json' -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+            $since = $null
+            if ($newest) { $since = [datetime]::ParseExact($newest.BaseName, 'yyyyMMddTHHmmssZ', $null) }
+            else {
+                $marker = Join-Path $dir 'first-seen.txt'
+                if (-not (Test-Path $marker)) { $runId | Set-Content $marker }
+                $since = [datetime]::ParseExact((Get-Content $marker -TotalCount 1).Trim(), 'yyyyMMddTHHmmssZ', $null)
+            }
+            if (((Get-Date).ToUniversalTime() - $since).TotalDays -gt $alerts.notSeenDays) { $problems.Add("$label`: not seen for $($alerts.notSeenDays) days") }
         }
     }
 
