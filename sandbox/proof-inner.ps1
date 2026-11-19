@@ -82,16 +82,20 @@ Invoke-Step 'everyone-settings' {
 }
 Invoke-Step 'wau-task' { $t = Get-ScheduledTask -TaskPath '\WAU\' -TaskName 'Winget-AutoUpdate' -ErrorAction Stop; "state " + $t.State }
 Invoke-Step 'undo-settings' {
-    $run = Get-ChildItem 'C:\ProgramData\deskside\data\runs' -Directory -Filter '*-settings' | Sort-Object Name | Select-Object -First 1
-    Assert-That ([bool]$run) 'no settings run'
-    $before = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced').HideFileExt
-    & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'scripts\settings\Undo-DesksideRun.ps1') -Run $run.FullName | Out-Null
-    $after = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -ErrorAction SilentlyContinue).HideFileExt
-    # Re-apply so the rest of the proof runs on the onboarded state.
+    # Start from extensions hidden (Windows' usual default), apply, undo, apply again.
+    $adv = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+    New-ItemProperty -Path $adv -Name HideFileExt -Value 1 -PropertyType DWord -Force | Out-Null
     & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'scripts\settings\Set-Baseline.ps1') -ItemId 'show-extensions' | Out-Null
-    $again = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced').HideFileExt
-    Assert-That ($before -eq 0 -and $after -ne 0 -and $again -eq 0) "HideFileExt before $before, after undo $after, re-applied $again"
-    "show-extensions undone and re-applied"
+    $applied = (Get-ItemProperty $adv).HideFileExt
+    $run = Get-ChildItem 'C:\ProgramData\deskside\data\runs' -Directory -Filter '*-settings' | Sort-Object Name -Descending | Select-Object -First 1
+    & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'scripts\settings\Undo-DesksideRun.ps1') -Run $run.FullName | Out-Null
+    $undone = (Get-ItemProperty $adv).HideFileExt
+    & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'scripts\settings\Undo-DesksideRun.ps1') -Run $run.FullName | Out-Null
+    $twice = (Get-ItemProperty $adv).HideFileExt
+    & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'scripts\settings\Set-Baseline.ps1') -ItemId 'show-extensions' | Out-Null
+    $again = (Get-ItemProperty $adv).HideFileExt
+    Assert-That ($applied -eq 0 -and $undone -eq 1 -and $twice -eq 1 -and $again -eq 0) "applied $applied, undone $undone, undone twice $twice, re-applied $again"
+    "show-extensions applied, undone (twice, no harm) and re-applied"
 }
 Invoke-Step 'idempotent' {
     & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'scripts\settings\Set-Baseline.ps1') -ItemId 'show-extensions,storage-sense,ads-tips-off,restart-notice,smartscreen-apps' | Out-Null
@@ -117,8 +121,8 @@ Invoke-Step 'ssh-login' {
     if (-not (Test-Path $ssh)) { $ssh = Join-Path $env:ProgramFiles 'OpenSSH\ssh.exe' }
     $tmpKey = Join-Path $env:TEMP 'proof_key'
     Copy-Item $key $tmpKey -Force
-    & icacls.exe $tmpKey /inheritance:r /grant "${env:USERNAME}:R" | Out-Null
-    $o = & $ssh -i $tmpKey -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o BatchMode=yes -p 22 "$env:USERNAME@127.0.0.1" "`$PSVersionTable.PSVersion.ToString(); Test-Path C:\ProgramData\deskside\app\scripts\diagnose\Invoke-Diagnose.ps1" 2>&1 | Out-String
+    & icacls.exe $tmpKey /inheritance:r /grant "${env:USERNAME}:F" | Out-Null
+    $o = & $ssh -i $tmpKey -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o BatchMode=yes -p 22 "$env:USERNAME@127.0.0.1" "`$PSVersionTable.PSVersion.ToString(); Test-Path C:\ProgramData\deskside\app\scripts\diagnose\Invoke-Diagnose.ps1" 2>&1 | Out-String
     $pw = & $ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o BatchMode=yes -o PubkeyAuthentication=no -o PreferredAuthentications=password -p 22 "$env:USERNAME@127.0.0.1" 'echo hi' 2>&1 | Out-String
     Remove-Item $tmpKey -Force
     Assert-That ($o -match 'True') "key login failed: $o"

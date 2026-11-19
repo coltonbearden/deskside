@@ -42,15 +42,17 @@ if (-not (Get-PackageProvider -ListAvailable -Name NuGet -ErrorAction SilentlyCo
 }
 $hadModule = [bool](Get-Module -ListAvailable -Name Microsoft.WinGet.Client)
 if (-not $hadModule) { Install-Module -Name Microsoft.WinGet.Client -Repository PSGallery -Force -Scope AllUsers -AllowClobber | Out-Null }
-Import-Module Microsoft.WinGet.Client -Force
-Repair-WinGetPackageManager -AllUsers -Latest -Force | Out-Null
+# The repair runs in a child Windows PowerShell so the module isn't loaded here and can be removed afterwards.
+$child = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$repair = 'Import-Module Microsoft.WinGet.Client; Repair-WinGetPackageManager -AllUsers -Latest -Force | Out-Null'
+& $child -NoProfile -ExecutionPolicy Bypass -EncodedCommand ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($repair)))
+if ($LASTEXITCODE -ne 0) { Write-Verbose "Repair-WinGetPackageManager exited $LASTEXITCODE." }
 
 $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $env:Path = $machinePath + ';' + $userPath + ';' + (Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps')
 
 if (-not $hadModule) {
-    Remove-Module Microsoft.WinGet.Client -Force -ErrorAction SilentlyContinue
     try { Uninstall-Module -Name Microsoft.WinGet.Client -AllVersions -Force -ErrorAction Stop } catch { Write-Verbose 'Could not remove the Microsoft.WinGet.Client module.' }
 }
 
