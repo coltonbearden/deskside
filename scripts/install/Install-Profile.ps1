@@ -72,8 +72,14 @@ foreach ($p in $profiles) {
             & $winget install --id $app.id -e --silent --accept-package-agreements @common *> (Join-Path $run.Folder ("winget-" + $app.id + '.log'))
             $code = $LASTEXITCODE
         }
-        & $winget list --id $app.id -e @common *> $null
-        if ($LASTEXITCODE -eq 0) {
+        # winget's list can lag behind a fresh install by a few seconds; ask again before calling it failed.
+        $found = $false
+        for ($try = 0; $try -lt 6 -and -not $found; $try++) {
+            if ($try -gt 0) { Start-Sleep -Seconds 5 }
+            & $winget list --id $app.id -e @common *> $null
+            $found = ($LASTEXITCODE -eq 0)
+        }
+        if ($found) {
             Save-BeforeState -Run $run -ItemId $app.id -Undo @{ type = 'winget'; id = $app.id; name = $app.name }
             $run.Changes.Add([pscustomobject]@{ what = $app.name; result = 'installed' })
             if ($app.PSObject.Properties['default']) { $defaults += $app }

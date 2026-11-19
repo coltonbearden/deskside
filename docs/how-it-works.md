@@ -8,9 +8,11 @@
 2. The owner agrees to set-up (`onboard`).
 3. One change list: junk and trialware found, plus the profile's settings the PC doesn't have yet. Each is asked yes
    or no.
-4. The profile's missing apps are installed through winget (winget is repaired first if it's missing).
-5. The yes settings are applied, the yes removals are done, each with its before-state saved.
-6. Health check again, so the difference is visible.
+4. The yes settings are applied, each with its before-state saved; turning restore points on comes first, so what
+   follows gets a restore point.
+5. The profile's missing apps are installed through winget (winget is repaired first if it's missing).
+6. The yes removals are done.
+7. Health check again, so the difference is visible.
 
 **A PC with a problem** (`-Flow Problem`): the health check's *fix now* items are shown first, then the same change
 list; no new apps unless a profile is named.

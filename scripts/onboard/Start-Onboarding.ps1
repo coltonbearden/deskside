@@ -5,7 +5,8 @@
 
 .DESCRIPTION
     NewPC:   diagnose -> owner agrees to 'onboard' -> one change list (removals + settings) marked yes or no ->
-             install the profile's missing apps -> apply the marked settings and removals -> diagnose again.
+             apply the marked settings (restore points first) -> install the profile's missing apps -> the marked
+             removals -> diagnose again.
     Problem: diagnose -> show what needs fixing now -> owner agrees -> the same change list, but no new apps
              unless -ProfileName is given -> apply -> diagnose again.
 
@@ -56,13 +57,16 @@ if (-not $ChangeList) {
     (ConvertTo-Json -InputObject $list -Depth 5) | Set-Content -LiteralPath $ChangeList -Encoding UTF8
 }
 
+# Settings first: turning restore points on (when marked yes) means the installs and removals after it get a
+# restore point of their own.
+Write-Information "`nStep 4: settings" -InformationAction Continue
+& (Join-Path $scripts 'settings\Set-Baseline.ps1') -ChangeList $ChangeList -WhatIf:$WhatIfPreference | Out-Null
 if ($ProfileName) {
-    Write-Information "`nStep 4: apps ($ProfileName profile)" -InformationAction Continue
+    Write-Information "`nStep 5: apps ($ProfileName profile)" -InformationAction Continue
     & (Join-Path $scripts 'install\Install-Profile.ps1') -ProfileName $ProfileName -WhatIf:$WhatIfPreference | Out-Null
 }
-Write-Information "`nStep 5: settings and removals" -InformationAction Continue
-& (Join-Path $scripts 'settings\Set-Baseline.ps1') -ChangeList $ChangeList -WhatIf:$WhatIfPreference | Out-Null
+Write-Information "`nStep 6: removals" -InformationAction Continue
 & (Join-Path $PSScriptRoot 'Remove-Apps.ps1') -ChangeList $ChangeList -WhatIf:$WhatIfPreference | Out-Null
 
-Write-Information "`nStep 6: health check again" -InformationAction Continue
+Write-Information "`nStep 7: health check again" -InformationAction Continue
 & (Join-Path $scripts 'diagnose\Invoke-Diagnose.ps1') -Quick
