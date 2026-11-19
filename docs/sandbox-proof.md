@@ -46,6 +46,7 @@ SSH through it, Claude Code running the diagnostics remotely. Then the device is
   14 of 14 passed, a restore point was made before the installs and all six apps were logged installed. Its records
   showed the install's undo.json nested under Windows PowerShell 5.1 (ConvertFrom-Json returns an array as one
   object), which a 5.1 integration test now covers and the install-undo-file step checks.
+- 2026-11-19, -Source github at 401f197: **15 of 15 passed**, including install-undo-file (all six apps in undo.json).
 - The mesh-agent step and the host-side checks wait for the MeshCentral server.
 
 ## What Sandbox can't prove
