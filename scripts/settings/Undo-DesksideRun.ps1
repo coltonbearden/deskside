@@ -22,11 +22,10 @@ $folder = $Run
 if (-not (Test-Path -LiteralPath $folder)) { $folder = Join-Path (Join-Path (Get-DesksideDataRoot) 'runs') $Run }
 $undoPath = Join-Path $folder 'undo.json'
 if (-not (Test-Path -LiteralPath $undoPath)) { throw "No undo.json in $folder; that run changed nothing that can be undone." }
-$entries = @(Get-Content -LiteralPath $undoPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+$entries = Read-JsonArray -Path $undoPath
 [array]::Reverse($entries)
 $donePath = Join-Path $folder 'undone.json'
-$done = @()
-if (Test-Path -LiteralPath $donePath) { $done = @(Get-Content -LiteralPath $donePath -Raw -Encoding UTF8 | ConvertFrom-Json) }
+$done = Read-JsonArray -Path $donePath
 
 $out = New-DesksideRun -Kind 'undo'
 $out.Data['undoing'] = (Split-Path $folder -Leaf)

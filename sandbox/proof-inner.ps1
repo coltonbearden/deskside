@@ -80,6 +80,13 @@ Invoke-Step 'everyone-settings' {
     Assert-That ($bad.Count -eq 0) ("not applied: " + ($bad -join ', '))
     "applied: " + (@($items).Count) + " (defender-pua not provable in Sandbox)"
 }
+Invoke-Step 'install-undo-file' {
+    $i = Get-ChildItem 'C:\ProgramData\deskside\data\runs' -Directory -Filter '*-install-everyone' | Select-Object -First 1
+    $u = Read-JsonArray -Path (Join-Path $i.FullName 'undo.json')
+    $ids = @($u | Where-Object { $_.type -eq 'winget' } | ForEach-Object { $_.id })
+    Assert-That ($ids.Count -eq 6) ("undo.json lists " + $ids.Count + " app(s): " + ($ids -join ', '))
+    "undo.json lists all 6 apps"
+}
 Invoke-Step 'wau-task' { $t = Get-ScheduledTask -TaskPath '\WAU\' -TaskName 'Winget-AutoUpdate' -ErrorAction Stop; "state " + $t.State }
 Invoke-Step 'undo-settings' {
     # Start from extensions hidden (Windows' usual default), apply, undo, apply again.

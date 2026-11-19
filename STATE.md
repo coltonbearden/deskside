@@ -11,7 +11,10 @@
   PowerShell 7, and in GitHub Actions.
 - **In flight:** the end-to-end proof's remote half (agent online on the server, SSH through MeshCentral's port map,
   Claude Code running the diagnostics remotely, device removed from the server) waits for the MeshCentral server.
-  Everything up to and including loopback SSH and removal is proven in Windows Sandbox (docs/sandbox-proof.md).
+  Everything up to and including loopback SSH and removal is proven in Windows Sandbox from the README's one-liner,
+  14 of 14 steps (docs/sandbox-proof.md, 2026-11-19).
+- **Waiting on the owner:** the `deskside-ssh` SSH Key item in 1Password (Personal vault), whose public key the
+  `enroll` skill installs on each PC; Dependabot's PR #1 (actions/checkout 4 to 7, checks green).
 - **How a failure reaches the owner:** CI failures show on GitHub. The health sweep (health/Invoke-HealthSweep.ps1)
   pushes to an uptime monitor whose downs become tasks; it's scheduled by the homelab's stack repo beside the
   MeshCentral server, not from here.

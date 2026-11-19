@@ -59,6 +59,23 @@ Describe 'On <Engine>' -Tag Integration -ForEach $Engines {
         $r.Output | Should -Match 'has not agreed'
     }
 
+    It 'saves every before-state flat and undoes them all (Windows PowerShell 5.1 nests JSON arrays if read naively)' {
+        $dir = Join-Path $TestDrive ('undo-' + [guid]::NewGuid())
+        try {
+            $r = Invoke-Engine 'tests\fixtures\Invoke-UndoRoundTrip.ps1' @('-Folder', $dir)
+            $r.Code | Should -Be 0
+            $u = @((Get-Content (Join-Path $dir 'undo.json') -Raw | ConvertFrom-Json) | ForEach-Object { $_ })
+            $u.Count | Should -Be 3
+            @($u | ForEach-Object { $_.item }) | Should -Be @('value-A', 'value-B', 'value-C')
+            $r = Invoke-Engine 'scripts\settings\Undo-DesksideRun.ps1' @('-Run', $dir)
+            $r.Code | Should -Be 0
+            $k = Get-Item 'HKCU:\Software\deskside-tests\Undo'
+            $k.GetValue('A') | Should -Be 1
+            $k.GetValueNames() | Should -Not -Contain 'B'
+            $k.GetValueNames() | Should -Not -Contain 'C'
+        } finally { Remove-Item 'HKCU:\Software\deskside-tests' -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+
     It 'with consent, Set-Baseline -WhatIf changes nothing and reports what it would do' {
         $c = Invoke-Engine 'scripts\onboard\Grant-Consent.ps1' @('-Scope', 'onboard', '-Confirmed')
         $c.Code | Should -Be 0

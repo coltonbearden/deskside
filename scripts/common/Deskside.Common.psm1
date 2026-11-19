@@ -394,6 +394,23 @@ function Get-DesksideVersion {
     return 'dev'
 }
 
+function Read-JsonArray {
+    <#
+    .SYNOPSIS
+        Reads a JSON array file into a flat PowerShell array on both engines.
+    .DESCRIPTION
+        Windows PowerShell 5.1's ConvertFrom-Json emits a JSON array as ONE object (an Object[]), so @(...) around it
+        gives a one-element array holding the whole list, and appending to that nests the list. foreach unrolls it.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+    $items = @()
+    if (-not (Test-Path -LiteralPath $Path)) { return ,$items }
+    $parsed = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    foreach ($e in $parsed) { $items += $e }
+    return ,$items
+}
+
 function Save-BeforeState {
     <#
     .SYNOPSIS
@@ -404,8 +421,7 @@ function Save-BeforeState {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Run, [Parameter(Mandatory)][string]$ItemId, [Parameter(Mandatory)][hashtable]$Undo)
     $path = Join-Path $Run.Folder 'undo.json'
-    $list = @()
-    if (Test-Path -LiteralPath $path) { $list = @(Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json) }
+    $list = Read-JsonArray -Path $path
     $entry = [ordered]@{ item = $ItemId; savedUtc = (Get-Date).ToUniversalTime().ToString('o') }
     foreach ($k in $Undo.Keys) { $entry[$k] = $Undo[$k] }
     $list += [pscustomobject]$entry

@@ -20,6 +20,7 @@ the Sandbox's logon command and writes one JSON line per step.
 | winget | winget, missing in a fresh Sandbox, was installed by Microsoft's documented repair |
 | everyone-apps | all six everyone apps are installed |
 | everyone-settings | every everyone setting is in place (Defender's PUA setting excepted: Defender doesn't run in Sandbox) |
+| install-undo-file | the install run's undo.json lists every app it installed |
 | wau-task | Winget-AutoUpdate's scheduled task exists |
 | undo-settings | a setting is applied, undone, undone again harmlessly, and re-applied |
 | idempotent | running the baseline a second time changes nothing |
@@ -41,6 +42,10 @@ SSH through it, Claude Code running the diagnostics remotely. Then the device is
   **14 of 14 passed.** The first health check found 3 fix-now, 3 fix-soon and 3 nice-to-have items (Windows 11 24H2
   out of support, no antivirus running, no backups, no restore points, nothing updating apps); after onboarding, the
   restore-point and app-update items were gone. Installing the six apps took about 12 minutes.
+- 2026-11-19, -Source github again after two fixes (settings before apps; recheck winget's list after an install):
+  14 of 14 passed, a restore point was made before the installs and all six apps were logged installed. Its records
+  showed the install's undo.json nested under Windows PowerShell 5.1 (ConvertFrom-Json returns an array as one
+  object), which a 5.1 integration test now covers and the install-undo-file step checks.
 - The mesh-agent step and the host-side checks wait for the MeshCentral server.
 
 ## What Sandbox can't prove
