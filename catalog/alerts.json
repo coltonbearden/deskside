@@ -1,0 +1,14 @@
+{
+  "schema": "deskside.alerts/v1",
+  "note": "What the health sweep alerts on. Each rule turns the sweep's monitor down with its message (no names: the PC's alias only). Days are counted from the newest successful value the PC reported.",
+  "notSeenDays": 30,
+  "rules": [
+    { "id": "disk-failing", "when": "finding", "findings": ["disk.unhealthy"], "message": "a drive reports it is failing" },
+    { "id": "disk-full", "when": "finding", "findings": ["disk.full"], "message": "the Windows drive is nearly full" },
+    { "id": "protection-off", "when": "finding", "findings": ["av.off", "av.realtime-off", "fw.off", "smartscreen.policy-off"], "message": "antivirus, firewall or SmartScreen is off" },
+    { "id": "windows-updates-stopped", "when": "olderThan", "path": "windowsUpdate.lastSuccessUtc", "days": 21, "message": "Windows hasn't installed an update for 3 weeks" },
+    { "id": "app-updates-stopped", "when": "olderThan", "path": "appUpdates.lastRunUtc", "days": 21, "message": "app updates (Winget-AutoUpdate) haven't run for 3 weeks" },
+    { "id": "backups-stopped", "when": "finding", "findings": ["backup.none"], "message": "nothing is backing up the PC's files" },
+    { "id": "remote-tool", "when": "finding", "findings": ["remote.unknown-tools"], "message": "an unexpected remote-control app appeared" }
+  ]
+}

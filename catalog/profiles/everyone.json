@@ -1,0 +1,16 @@
+{
+  "schema": "deskside.profile/v1",
+  "id": "everyone",
+  "title": "Everyone",
+  "description": "The essentials for every PC: app updates kept automatic, archives, media, a password manager, a browser and a PDF reader, plus the everyone settings baseline.",
+  "chosen": "Colton's choice, 2026-11-19",
+  "apps": [
+    { "id": "Romanitho.Winget-AutoUpdate", "name": "Winget-AutoUpdate", "why": "Keeps every app below updated daily and only speaks up when an update fails.", "installer": "Install-WAU" },
+    { "id": "7zip.7zip", "name": "7-Zip", "why": "Opens .7z, .rar and other archives Windows can't." },
+    { "id": "VideoLAN.VLC", "name": "VLC media player", "why": "Plays almost any video or audio file." },
+    { "id": "Bitwarden.Bitwarden", "name": "Bitwarden", "why": "A free password manager, so passwords stop being reused." },
+    { "id": "Google.Chrome", "name": "Google Chrome", "why": "The default browser.", "default": { "what": "browser", "settingsUri": "ms-settings:defaultapps" } },
+    { "id": "SumatraPDF.SumatraPDF", "name": "SumatraPDF", "why": "A small, fast PDF reader.", "default": { "what": ".pdf", "settingsUri": "ms-settings:defaultapps" } }
+  ],
+  "settings": ["restore-points", "defender-pua", "smartscreen-apps", "restart-notice", "show-extensions", "storage-sense", "ads-tips-off"]
+}

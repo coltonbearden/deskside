@@ -1,0 +1,12 @@
+# Windows PowerShell 5.1 and Windows tools expect CRLF in scripts; keep text normalized in the repo.
+* text=auto
+*.ps1 text eol=crlf
+*.psm1 text eol=crlf
+*.psd1 text eol=crlf
+*.cmd text eol=crlf
+*.json text eol=crlf
+*.md text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+.githooks/* text eol=lf
+profiles/wsl/* text eol=lf

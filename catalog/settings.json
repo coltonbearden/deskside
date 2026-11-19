@@ -1,0 +1,105 @@
+{
+  "schema": "deskside.settings/v1",
+  "note": "Each item says what it does, why, Microsoft's page for it, and how it is undone. 'registry' items are undone from the before-state each run saves; 'handler' items name a function in scripts/settings/Set-Baseline.ps1 that saves and restores its own state. HKCU items apply to the signed-in person who runs the script.",
+  "items": [
+    {
+      "id": "restore-points",
+      "title": "Turn on restore points",
+      "profiles": ["everyone"],
+      "what": "Turns on System Protection for the Windows drive so Windows keeps restore points.",
+      "why": "A restore point lets the PC go back to how it was before a bad update, driver or app, and deskside makes one before every change it makes.",
+      "source": "https://support.microsoft.com/en-us/windows/system-protection-e9126e6e-fa64-4f5f-874d-9db90e57645a",
+      "type": "handler",
+      "handler": "SystemProtection",
+      "undo": "Turns System Protection back off for the Windows drive if it was off before."
+    },
+    {
+      "id": "defender-pua",
+      "title": "Block potentially unwanted apps",
+      "profiles": ["everyone"],
+      "what": "Turns on Microsoft Defender's blocking of potentially unwanted apps (adware, bundled toolbars, junk 'cleaners').",
+      "why": "Most junk on family PCs arrives bundled with free downloads; this stops it at install time.",
+      "source": "https://learn.microsoft.com/en-us/defender-endpoint/detect-block-potentially-unwanted-apps-microsoft-defender-antivirus",
+      "type": "handler",
+      "handler": "DefenderPua",
+      "undo": "Sets the PUA protection setting back to its previous value."
+    },
+    {
+      "id": "smartscreen-apps",
+      "title": "SmartScreen on for apps and files",
+      "profiles": ["everyone"],
+      "what": "Turns SmartScreen's check of downloaded apps and files back on when it has been switched off.",
+      "why": "SmartScreen warns before running unknown or known-bad downloads, a common way scams start.",
+      "source": "https://learn.microsoft.com/en-us/windows/security/operating-system-security/virus-and-threat-protection/microsoft-defender-smartscreen/",
+      "type": "registry",
+      "values": [
+        { "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer", "name": "SmartScreenEnabled", "kind": "String", "value": "Warn", "compliantValues": ["Warn", "Prompt", "RequireAdmin"], "missingIsCompliant": true }
+      ],
+      "undo": "Puts the previous value back."
+    },
+    {
+      "id": "restart-notice",
+      "title": "Warn before update restarts",
+      "profiles": ["everyone"],
+      "what": "Turns on 'Notify me when a restart is required to finish updating' in Windows Update.",
+      "why": "The PC tells the person before it restarts for updates, so they aren't surprised and don't lose work.",
+      "source": "https://support.microsoft.com/en-us/windows/windows-update-faq-8a903416-6f45-0718-f5c7-375e92dddeb2",
+      "type": "registry",
+      "values": [
+        { "path": "HKLM:\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings", "name": "RestartNotificationsAllowed2", "kind": "DWord", "value": 1 }
+      ],
+      "undo": "Puts the previous value back (or removes it if it wasn't set)."
+    },
+    {
+      "id": "show-extensions",
+      "title": "Show file name extensions",
+      "profiles": ["everyone"],
+      "what": "Shows the ending of file names (.pdf, .exe) in File Explorer.",
+      "why": "A file called invoice.pdf.exe looks like a PDF when extensions are hidden; showing them makes fake files easy to spot.",
+      "source": "https://support.microsoft.com/en-us/windows/common-file-name-extensions-in-windows-da4a4430-8e76-89c5-59f7-1cdbbc75cb01",
+      "type": "registry",
+      "values": [
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "HideFileExt", "kind": "DWord", "value": 0 }
+      ],
+      "undo": "Puts the previous value back."
+    },
+    {
+      "id": "storage-sense",
+      "title": "Turn on Storage Sense",
+      "profiles": ["everyone"],
+      "what": "Lets Windows clear temporary files and old Recycle Bin items automatically when the disk runs low.",
+      "why": "A full disk is one of the most common reasons a family PC becomes slow or stops updating.",
+      "source": "https://support.microsoft.com/en-us/windows/manage-drive-space-with-storage-sense-654f6ada-7bfc-45e5-966b-e24aded96ad5",
+      "type": "registry",
+      "values": [
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\StorageSense\\Parameters\\StoragePolicy", "name": "01", "kind": "DWord", "value": 1 }
+      ],
+      "undo": "Puts the previous value back."
+    },
+    {
+      "id": "ads-tips-off",
+      "title": "Turn off ads and tips",
+      "profiles": ["everyone"],
+      "what": "Turns off suggested apps and ads in Start, tips and 'fun facts' on the lock screen, suggested content in Settings, the 'finish setting up your device' nag and tailored offers.",
+      "why": "These prompts push sign-ups and installs that confuse people who don't know they can say no.",
+      "source": "https://support.microsoft.com/en-us/windows/privacy/privacy-settings-for-recommendations-offers-in-windows-11",
+      "type": "registry",
+      "values": [
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-338387Enabled", "kind": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-338388Enabled", "kind": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-338389Enabled", "kind": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-338393Enabled", "kind": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-353694Enabled", "kind": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-353696Enabled", "kind": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-310093Enabled", "kind": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SystemPaneSuggestionsEnabled", "kind": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SoftLandingEnabled", "kind": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "RotatingLockScreenOverlayEnabled", "kind": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "Start_IrisRecommendations", "kind": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\UserProfileEngagement", "name": "ScoobeSystemSettingEnabled", "kind": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Privacy", "name": "TailoredExperiencesWithDiagnosticDataEnabled", "kind": "DWord", "value": 0 }
+      ],
+      "undo": "Puts each previous value back (or removes it if it wasn't set)."
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "schema": "deskside.profile/v1",
+  "id": "power",
+  "title": "Power user",
+  "description": "For people who want a modern command line: PowerShell 7, Windows Terminal and Git, on top of the everyone profile.",
+  "includes": ["everyone"],
+  "apps": [
+    { "id": "Microsoft.PowerShell", "name": "PowerShell 7", "why": "The current PowerShell, beside the Windows PowerShell 5.1 that ships with Windows." },
+    { "id": "Microsoft.WindowsTerminal", "name": "Windows Terminal", "why": "Tabs and a modern console for PowerShell, Command Prompt and WSL." },
+    { "id": "Git.Git", "name": "Git", "why": "Version control, and the Git Bash shell." }
+  ],
+  "files": [
+    { "from": "profiles/Microsoft.PowerShell_profile.ps1", "to": "%USERPROFILE%\\Documents\\PowerShell\\Microsoft.PowerShell_profile.ps1" }
+  ],
+  "settings": []
+}

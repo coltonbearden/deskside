@@ -1,0 +1,24 @@
+{
+  "schema": "deskside.remote-tools/v1",
+  "note": "Remote-access tools that scammers ask people to install. Finding one is reported as 'fix now' unless the person knows who installed it and why. MeshCentral's own agent is expected on enrolled PCs and is reported as Info.",
+  "items": [
+    { "pattern": "TeamViewer", "name": "TeamViewer" },
+    { "pattern": "AnyDesk", "name": "AnyDesk" },
+    { "pattern": "UltraViewer", "name": "UltraViewer" },
+    { "pattern": "RustDesk", "name": "RustDesk" },
+    { "pattern": "ScreenConnect|ConnectWise Control", "name": "ScreenConnect" },
+    { "pattern": "LogMeIn", "name": "LogMeIn" },
+    { "pattern": "GoTo ?(Resolve|Assist)|GoToAssist", "name": "GoTo Resolve" },
+    { "pattern": "Splashtop", "name": "Splashtop" },
+    { "pattern": "Supremo", "name": "Supremo" },
+    { "pattern": "Zoho Assist", "name": "Zoho Assist" },
+    { "pattern": "Chrome Remote Desktop", "name": "Chrome Remote Desktop" },
+    { "pattern": "RemotePC", "name": "RemotePC" },
+    { "pattern": "Ammyy", "name": "Ammyy Admin" },
+    { "pattern": "Atera|Syncro|NinjaOne|Kaseya", "name": "An IT management agent" },
+    { "pattern": "TightVNC|UltraVNC|RealVNC|TigerVNC", "name": "VNC" }
+  ],
+  "expected": [
+    { "pattern": "^Mesh Agent$|MeshCentral", "name": "MeshCentral agent (deskside remote help)" }
+  ]
+}

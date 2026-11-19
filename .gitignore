@@ -1,0 +1,22 @@
+# Records, reports and transcripts never live in this public repo: they go to the private records store.
+output/
+records/
+runs/
+*.transcript
+transcript.txt
+record.json
+summary.md
+changelist.json
+changelist.md
+undo.json
+devices.json
+meshcentral.json
+denylist.txt
+# Sandbox proof working folders and keys
+sandbox/work/
+proof_key*
+*.wsb
+!sandbox/*.wsb.template
+# Tooling
+.vscode/
+*.log

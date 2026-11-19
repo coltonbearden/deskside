@@ -1,0 +1,7 @@
+# gitleaks config: the default rules, nothing allowlisted beyond test fixtures' fake keys.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures use obviously fake keys"
+paths = ['''tests[\\/]fixtures[\\/]''']

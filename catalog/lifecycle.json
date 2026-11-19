@@ -1,0 +1,24 @@
+{
+  "schema": "deskside.lifecycle/v1",
+  "readOn": "2026-11-19",
+  "staleAfterDays": 180,
+  "sources": {
+    "windows11HomePro": "https://learn.microsoft.com/en-us/lifecycle/products/windows-11-home-and-pro",
+    "windows10Esu": "https://www.microsoft.com/en-us/windows/extended-security-updates"
+  },
+  "note": "End dates are copied as Microsoft lists them: support ends at 6:59:59 AM Pacific Time on the end date.",
+  "windows11HomePro": [
+    { "version": "26H2", "start": "2026-09-29", "end": "2028-10-10" },
+    { "version": "26H1", "start": "2026-02-10", "end": "2028-03-15" },
+    { "version": "25H2", "start": "2025-09-30", "end": "2027-10-13" },
+    { "version": "24H2", "start": "2024-10-01", "end": "2026-10-14" },
+    { "version": "23H2", "start": "2023-10-31", "end": "2025-11-12" },
+    { "version": "22H2", "start": "2022-09-20", "end": "2024-10-09" },
+    { "version": "21H2", "start": "2021-10-04", "end": "2023-10-11" }
+  ],
+  "windows10": {
+    "supportEnded": "2025-10-14",
+    "consumerEsuEnd": "2027-10-12",
+    "esuRequires": "Windows 10 version 22H2 and a Microsoft account that is an administrator on the PC"
+  }
+}

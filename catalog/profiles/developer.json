@@ -1,0 +1,23 @@
+{
+  "schema": "deskside.profile/v1",
+  "id": "developer",
+  "title": "Developer",
+  "description": "For people who build things: WSL, chezmoi, PowerShell modules and command-line tools, on top of the power profile. WSL needs a restart and virtualization turned on in the PC's firmware.",
+  "includes": ["power"],
+  "apps": [
+    { "id": "twpayne.chezmoi", "name": "chezmoi", "why": "Keeps the person's own config files (dotfiles) in a repo." },
+    { "id": "BurntSushi.ripgrep.MSVC", "name": "ripgrep", "why": "Fast text search." },
+    { "id": "sharkdp.fd", "name": "fd", "why": "Fast file finder." },
+    { "id": "junegunn.fzf", "name": "fzf", "why": "Fuzzy finder for the command line." },
+    { "id": "Starship.Starship", "name": "Starship", "why": "A clear, fast shell prompt." }
+  ],
+  "modules": [
+    { "name": "PSReadLine", "why": "Better command-line editing and history." },
+    { "name": "Terminal-Icons", "why": "File icons in directory listings." }
+  ],
+  "wsl": { "distribution": "Ubuntu", "afterSetup": "After the restart and the first Ubuntu sign-in, copy profiles/wsl/.bashrc.deskside to ~/.bashrc.deskside and add the source line it shows to ~/.bashrc." },
+  "files": [
+    { "from": "profiles/windows-terminal.settings.json", "to": "%LOCALAPPDATA%\\Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\LocalState\\settings.json", "mode": "seed-if-missing" }
+  ],
+  "settings": []
+}

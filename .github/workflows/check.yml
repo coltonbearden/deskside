@@ -1,0 +1,38 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install PSScriptAnalyzer and Pester (latest)
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          Install-Module Pester -Scope CurrentUser -Force -SkipPublisherCheck -MinimumVersion 5.5
+
+      - name: Install gitleaks (latest release)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'gitleaks'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          gh release download --repo gitleaks/gitleaks --pattern '*windows_x64.zip' --dir $dir
+          Expand-Archive (Get-ChildItem $dir -Filter *.zip).FullName -DestinationPath $dir
+          $dir | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+      - name: Invoke-Check (analyzer, Pester, Windows PowerShell 5.1 and PowerShell 7 integration, secrets, personal data)
+        shell: pwsh
+        run: ./Invoke-Check.ps1 -Integration

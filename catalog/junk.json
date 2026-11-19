@@ -1,0 +1,16 @@
+{
+  "schema": "deskside.junk/v1",
+  "note": "Name patterns (case-insensitive regular expressions) matched against installed app names. 'recommended' items go on the removal list marked for removal; 'questionable' items go on it unmarked, for a yes or no. Nothing is removed unless the list comes back marked.",
+  "items": [
+    { "pattern": "^McAfee", "label": "McAfee (often a preinstalled trial)", "verdict": "questionable", "why": "Trial antivirus that nags for payment and runs beside Microsoft Defender. Keep it only if they pay for it." },
+    { "pattern": "^Norton", "label": "Norton (often a preinstalled trial)", "verdict": "questionable", "why": "Trial antivirus that nags for payment. Keep it only if they pay for it." },
+    { "pattern": "WildTangent", "label": "WildTangent Games", "verdict": "recommended", "why": "Preinstalled game launcher that shows ads." },
+    { "pattern": "^ExpressVPN", "label": "ExpressVPN trial", "verdict": "questionable", "why": "Often a preinstalled trial. Keep it only if they use it." },
+    { "pattern": "Booking\\.com", "label": "Booking.com shortcut", "verdict": "recommended", "why": "Preinstalled promotional shortcut." },
+    { "pattern": "^Avast|^AVG ", "label": "Avast or AVG", "verdict": "questionable", "why": "Free antivirus that upsells and has sold browsing data in the past; Microsoft Defender covers the same ground." },
+    { "pattern": "Driver ?(Booster|Easy|Updater|Support)", "label": "Driver updater", "verdict": "recommended", "why": "Driver 'updaters' are a common source of bad drivers and nags; Windows Update supplies drivers." },
+    { "pattern": "(PC|Registry|Advanced System) ?(Cleaner|Optimizer|Care|Repair|Mechanic)|CCleaner|Reimage|Restoro|Fortect", "label": "PC cleaner or optimizer", "verdict": "recommended", "why": "These tools scare people into paying and can break Windows; Storage Sense does the useful part." },
+    { "pattern": "Web ?Companion|Lavasoft|Ask Toolbar|Conduit|Babylon|OneLaunch|Wave Browser|Shift Browser|WebNavigator", "label": "Browser hijacker or bundled toolbar", "verdict": "recommended", "why": "Changes the browser's home page and search to show ads." },
+    { "pattern": "^HP (Wolf Security|Sure)|^Dell SupportAssist Remediation|^Lenovo Vantage Service", "label": "PC maker add-on", "verdict": "questionable", "why": "Some maker add-ons are useful (driver and firmware updates), others duplicate Windows; decide per PC." }
+  ]
+}
