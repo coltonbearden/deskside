@@ -6,8 +6,9 @@
 .DESCRIPTION
     Downloads the Windows agent for the device group from the server (MeshCentral serves it at
     /meshagents?id=4&meshid=<group>&installflags=0: 64-bit, background service plus the tray so the person can see
-    sessions and ask for help) and runs it with -fullinstall. The person sees when a session is active through the
-    device group's notify setting on the server. A "Remove remote help" shortcut goes on the public desktop.
+    sessions and ask for help) and runs it with -fullinstall. The device group's notify setting shows the person a
+    notice and a privacy bar for desktop, terminal and file sessions; MeshCentral shows nothing for a TCP port map (the
+    SSH route deskside's console uses), which the consent wording says. A "Remove remote help" shortcut goes on the public desktop.
 
     Needs the owner's 'remote' consent and stops on a work or school PC. The server address and group come in as
     parameters: they never live in this public repo.

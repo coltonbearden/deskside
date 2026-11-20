@@ -13,7 +13,8 @@ When someone's new PC needs setting up, or an old one starts acting up, deskside
   ships its undo, and every removal or settings change is offered as one list to mark yes or no.
 - **Remote help afterwards.** The [MeshCentral](https://github.com/Ylianst/MeshCentral) agent connects the PC to your
   own MeshCentral server, and an OpenSSH server that listens only on the PC itself lets you run deskside's scripts
-  through MeshCentral's port mapping. SSH is never open on their home network.
+  through MeshCentral's port mapping. SSH is never open on their home network. Screen, terminal and file sessions show the
+  person a notice; background runs over the port map don't, which the consent wording tells them up front.
 - **A Claude Code console.** [`.claude/`](.claude) holds skills (`connect`, `diagnose`, `onboard`, `apply-settings`,
   `undo`, `report`, `enroll`, `remove`) for running all of this from *your* machine. Claude Code never runs on, or
   signs in from, their PC.

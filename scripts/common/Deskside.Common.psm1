@@ -150,7 +150,7 @@ function Get-ConsentText {
     switch ($Scope) {
         'diagnose' { 'Read this PC''s settings, health and installed apps, and write a report. Nothing is changed.' }
         'onboard' { 'Install the apps and apply the settings on the list you agree to. Each change is recorded and can be undone.' }
-        'remote' { 'Install the MeshCentral agent so your helper can connect to this PC when you need help, and turn on a sign-in for him that only works through that agent. You will see when he is connected, and you can remove it any time with "Remove remote help" on the desktop.' }
+        'remote' { 'Install the MeshCentral agent so your helper can connect to this PC when you need help, and turn on a sign-in for him that only works through that agent. If he views your screen, a terminal or your files, you will see a notice. When he only runs checks and fixes in the background, nothing appears on screen, but every run is recorded on this PC. You can remove it any time with "Remove remote help" on the desktop.' }
     }
 }
 

@@ -18,4 +18,5 @@ nothing can reach it yet. Walk him through it; he types the commands on the PC.
 5. On his machine: find the new device's node id in MeshCentral, add the device to `devices.json` (alias, meshNodeId,
    sshUser = the PC account used, profile, consent dates for each scope the owner agreed to), commit the records repo.
 6. Prove it: run the `connect` skill for the alias. Then show the owner the "Remove remote help" shortcut on their
-   desktop and that a banner appears when he's connected.
+   desktop. Tell them plainly: a notice and privacy bar appear when he views the screen, a terminal or files; checks run
+   over the SSH route show nothing on screen, but each run is recorded on the PC.

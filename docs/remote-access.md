@@ -15,7 +15,9 @@
 - **The agent** comes from the helper's own MeshCentral server and device group:
   `scripts/remote/Install-MeshAgent.ps1 -ServerUrl https://<server> -GroupId <mesh id>`. It downloads the group's
   64-bit agent (`/meshagents?id=4&meshid=...&installflags=0`), runs `-fullinstall` and leaves a *Remove remote help*
-  shortcut on the desktop. The device group's notify setting shows the person when a session is active.
+  shortcut on the desktop. The device group's notify setting shows the person a notice and a privacy bar for desktop,
+  terminal and file sessions. **A TCP port map (the SSH route below) shows nothing on the PC**, so the owner's consent
+  wording says so, and every run deskside makes over it is recorded on the PC in `C:\ProgramData\deskside\data\runs`.
 - **SSH** is Windows' own OpenSSH Server, `ListenAddress 127.0.0.1`, `PasswordAuthentication no`,
   `AuthenticationMethods publickey`, the helper's key in `administrators_authorized_keys` with Microsoft's ACL, the
   installers' inbound firewall rules turned off. Where Windows can't add the optional feature (Windows Sandbox, a
