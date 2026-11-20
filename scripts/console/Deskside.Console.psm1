@@ -131,7 +131,9 @@ function Start-MeshRoute {
     $action = New-MeshRouteAction -Settings $s -Device $Device -Login $login -LocalPort $port -RemotePort $RemotePort
     $actionPath = Join-Path $work 'meshaction.txt'
     ($action | ConvertTo-Json) | Set-Content -LiteralPath $actionPath -Encoding ascii
-    $proc = Start-Process -FilePath $exe -WorkingDirectory $work -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $work 'out.txt') -RedirectStandardError (Join-Path $work 'err.txt')
+    # MeshCmd reads meshaction.txt from its own current folder, which isn't reliably the working directory given here,
+    # so the file is named explicitly.
+    $proc = Start-Process -FilePath $exe -ArgumentList 'route', '--actionfile', ('"' + $actionPath + '"') -WorkingDirectory $work -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $work 'out.txt') -RedirectStandardError (Join-Path $work 'err.txt')
     $deadline = (Get-Date).AddSeconds(30)
     $ready = $false
     while ((Get-Date) -lt $deadline -and -not $proc.HasExited) {
