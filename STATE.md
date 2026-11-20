@@ -10,7 +10,7 @@
   `.claude/` console are built. `Invoke-Check.ps1 -Integration` passes locally under Windows PowerShell 5.1 and
   PowerShell 7, and in GitHub Actions.
 - **Proven end to end:** the README's one-liner through remote help, against the live MeshCentral server, in Windows
-  Sandbox: 23 of 23 steps at d0fb4a5 with the console at 6910365 (docs/sandbox-proof.md, 2026-11-20). The agent
+  Sandbox: 23 of 23 steps at d0fb4a5 with the console at 6910365 (docs/sandbox-proof.md, 2026-11-19). The agent
   joins the Proofs group, the console's MeshCmd port map and SSH reach the PC, Claude Code on the helper's machine runs
   the diagnose skill and the record comes back, and removal leaves nothing on the PC or the server. Not yet run
   anywhere: the developer profile (WSL needs nested virtualization), `Remove-DesksideDevice` against a real device,

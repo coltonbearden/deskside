@@ -58,7 +58,7 @@ remotely). The Proofs group removes the device from the server when the agent is
   the nested Claude Code session found that its remote run failed on the PC's default script policy and fixed the
   console itself mid-run (d0fb4a5: `powershell.exe -ExecutionPolicy Bypass -File` for that run only). The host check
   now forbids edits, so a proof can't patch what it proves.
-- 2026-11-20, `-Source github -Remote` at d0fb4a5 (console at 6910365, which also checks the server certificate when
+- 2026-11-19 (second run), `-Source github -Remote` at d0fb4a5 (console at 6910365, which also checks the server certificate when
   the route starts): **23 of 23 passed, no edits.** mesh-agent (agent running, node id handed over), host:route-ssh
   (MeshCmd port map over the private relay, SSH with the proof key, Windows PowerShell 5.1), host:claude-diagnose
   (Claude Code on the helper's machine ran the `diagnose` skill; the record came back to the throwaway store),
