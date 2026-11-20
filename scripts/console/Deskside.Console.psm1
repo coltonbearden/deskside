@@ -80,6 +80,38 @@ function Get-FreePort {
     return $port
 }
 
+function Get-MeshRelayUrl {
+    <# The relay MeshCmd connects to: meshcentral.json's relayUrl when set, else the server URL's /meshrelay.ashx. #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Settings)
+    if ($Settings.PSObject.Properties['relayUrl'] -and $Settings.relayUrl) { return $Settings.relayUrl }
+    return ($Settings.serverUrl.TrimEnd('/') -replace '^https://', 'wss://') + '/meshrelay.ashx'
+}
+
+function New-MeshRouteAction {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an object in memory; changes nothing.')]
+    <#
+    .SYNOPSIS
+        Builds MeshCmd's route action (the contents of meshaction.txt).
+    .NOTES
+        MeshCmd checks the server by serverId (the key hash of its own certificate) when serverId is present, otherwise
+        by serverHttpsHash (the TLS certificate's fingerprint). Behind a proxy that holds its own certificate only the
+        second works, so an empty serverId is left out rather than sent. debugLevel is never set: above 0 MeshCmd
+        prints the login.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Settings, [Parameter(Mandatory)]$Device, [Parameter(Mandatory)]$Login, [Parameter(Mandatory)][int]$LocalPort, [int]$RemotePort = 22)
+    $a = [ordered]@{
+        action = 'route'; localPort = $LocalPort; remoteName = $Device.alias; remoteNodeId = $Device.meshNodeId; remotePort = $RemotePort
+        username = $Login.User; password = $Login.Password
+    }
+    if ($Settings.PSObject.Properties['serverId'] -and $Settings.serverId) { $a['serverId'] = $Settings.serverId }
+    elseif ($Settings.PSObject.Properties['serverHttpsHash'] -and $Settings.serverHttpsHash) { $a['serverHttpsHash'] = $Settings.serverHttpsHash }
+    else { throw 'meshcentral.json needs serverId or serverHttpsHash so MeshCmd can check the server.' }
+    $a['serverUrl'] = Get-MeshRelayUrl -Settings $Settings
+    return $a
+}
+
 function Start-MeshRoute {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Starts a local MeshCmd process; changes nothing on either machine.')]
     <#
@@ -96,12 +128,7 @@ function Start-MeshRoute {
     $port = Get-FreePort
     $work = Join-Path $env:TEMP ('deskside-route-' + [guid]::NewGuid())
     New-Item -ItemType Directory -Path $work | Out-Null
-    $wss = ($s.serverUrl.TrimEnd('/') -replace '^https://', 'wss://') + '/meshrelay.ashx'
-    $action = [ordered]@{
-        action = 'route'; localPort = $port; remoteName = $Device.alias; remoteNodeId = $Device.meshNodeId; remotePort = $RemotePort
-        username = $login.User; password = $login.Password; serverId = $s.serverId; serverHttpsHash = $s.serverHttpsHash
-        debugLevel = 0; serverUrl = $wss
-    }
+    $action = New-MeshRouteAction -Settings $s -Device $Device -Login $login -LocalPort $port -RemotePort $RemotePort
     $actionPath = Join-Path $work 'meshaction.txt'
     ($action | ConvertTo-Json) | Set-Content -LiteralPath $actionPath -Encoding ascii
     $proc = Start-Process -FilePath $exe -WorkingDirectory $work -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $work 'out.txt') -RedirectStandardError (Join-Path $work 'err.txt')
@@ -131,12 +158,18 @@ function Stop-MeshRoute {
 }
 
 function Get-SshArgument {
-    <# Common ssh options: the port map, a per-device known_hosts, keys from the 1Password SSH agent only. #>
+    <#
+        Common ssh options: the port map, a per-device known_hosts, keys from the SSH agent (1Password). With
+        $env:DESKSIDE_SSH_IDENTITY set (the Sandbox proof's throwaway key) that key file is used instead. The first two
+        items are always '-p' and the port.
+    #>
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Route, [Parameter(Mandatory)]$Device)
     $kh = Join-Path $env:LOCALAPPDATA 'deskside\known_hosts'
-    return @('-p', $Route.LocalPort, '-o', "HostKeyAlias=deskside-$($Device.alias)", '-o', "UserKnownHostsFile=$kh",
+    $a = @('-p', $Route.LocalPort, '-o', "HostKeyAlias=deskside-$($Device.alias)", '-o', "UserKnownHostsFile=$kh",
         '-o', 'StrictHostKeyChecking=accept-new', '-o', 'PasswordAuthentication=no', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20')
+    if ($env:DESKSIDE_SSH_IDENTITY) { $a += @('-i', $env:DESKSIDE_SSH_IDENTITY, '-o', 'IdentitiesOnly=yes', '-o', 'IdentityAgent=none') }
+    return $a
 }
 
 Export-ModuleMember -Function *

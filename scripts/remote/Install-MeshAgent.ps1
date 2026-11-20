@@ -55,6 +55,10 @@ if ($svc) {
     Save-BeforeState -Run $run -ItemId 'mesh-agent' -Undo @{ type = 'note'; text = 'Remove the agent with scripts\remote\Remove-RemoteHelp.ps1.' }
     $run.Changes.Add([pscustomobject]@{ what = 'MeshCentral agent'; result = 'installed and running' })
 }
+# The device's id on the server, for devices.json in the helper's private store (the record stays off screen).
+$nodeId = $null
+for ($i = 0; $svc -and $i -lt 10 -and -not $nodeId; $i++) { $nodeId = Get-MeshNodeId; if (-not $nodeId) { Start-Sleep -Seconds 3 } }
+$run.Data['meshNodeId'] = $nodeId
 
 # The person's own way out: a desktop shortcut to the removal script.
 $appRoot = Get-DesksideRoot

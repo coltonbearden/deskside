@@ -510,6 +510,25 @@ function New-DesksideRestorePoint {
     }
 }
 
+function ConvertTo-MeshNodeId {
+    <# MeshAgent.exe -nodeid prints the id as hex; MeshCentral names the device node//<base64 with / as $ and + as @>. #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][ValidatePattern('^[0-9A-Fa-f]{96}$')][string]$Hex)
+    $bytes = New-Object byte[] 48
+    for ($i = 0; $i -lt 48; $i++) { $bytes[$i] = [Convert]::ToByte($Hex.Substring($i * 2, 2), 16) }
+    return 'node//' + [Convert]::ToBase64String($bytes).Replace('/', '$').Replace('+', '@')
+}
+
+function Get-MeshNodeId {
+    <# The installed agent's MeshCentral node id, or $null when there is no agent or it has no id yet. #>
+    [CmdletBinding()]
+    param([string]$AgentPath = (Join-Path $env:ProgramFiles 'Mesh Agent\MeshAgent.exe'))
+    if (-not (Test-Path -LiteralPath $AgentPath)) { return $null }
+    $out = (& $AgentPath -nodeid 2>$null | Out-String).Trim()
+    if ($out -match '^[0-9A-Fa-f]{96}$') { return ConvertTo-MeshNodeId -Hex $out }
+    return $null
+}
+
 function Get-WingetPath {
     <# Returns the winget.exe path or $null. Looks in the PATH and in the App Installer package folder (SYSTEM context). #>
     [CmdletBinding()]

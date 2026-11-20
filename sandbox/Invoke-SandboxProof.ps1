@@ -12,6 +12,10 @@
     With -ServerUrl and -GroupId the MeshCentral agent is installed too and -HostCheck runs on this machine while
     the Sandbox waits (port map, SSH through it, Claude Code running the diagnostics remotely).
 
+    -Remote does that from the private records store: the agent address from meshcentral.json, the group id read from
+    1Password by its "proofGroupRef" (a group that removes devices when they disconnect), and
+    sandbox\Invoke-HostCheck.ps1 as the host check.
+
     Only one Windows Sandbox can run at a time; close any other first.
 #>
 [CmdletBinding()]
@@ -21,12 +25,23 @@ param(
     [string]$ServerUrl,
     [string]$GroupId,
     [scriptblock]$HostCheck,
+    [switch]$Remote,
     [string]$WorkDir = (Join-Path $env:TEMP 'deskside-proof'),
     [int]$TimeoutMinutes = 60
 )
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+if ($Remote) {
+    Import-Module (Join-Path $root 'scripts\console\Deskside.Console.psm1') -Force
+    $ms = Get-MeshSetting
+    $ServerUrl = $ms.serverUrl
+    $GroupId = (& op read $ms.proofGroupRef).Trim()
+    if (-not $GroupId) { throw '1Password did not return the proof group id.' }
+    $hostScript = Join-Path $PSScriptRoot 'Invoke-HostCheck.ps1'
+    $proofDir = $WorkDir
+    $HostCheck = { & $hostScript -WorkDir $proofDir }.GetNewClosure()
+}
 if (Get-Process -Name WindowsSandbox, WindowsSandboxClient, WindowsSandboxRemoteSession -ErrorAction SilentlyContinue) { throw 'A Windows Sandbox is already running; close it first.' }
 
 Remove-Item $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -89,6 +104,14 @@ Get-Process -Name WindowsSandbox, WindowsSandboxClient, WindowsSandboxRemoteSess
 $results = @(Get-Content (Join-Path $out 'proof.jsonl') -ErrorAction SilentlyContinue | ForEach-Object { $_ | ConvertFrom-Json })
 if (-not (Test-Path (Join-Path $out 'DONE'))) { Write-Host 'The proof timed out.' -ForegroundColor Red; exit 1 }
 $failed = @($results | Where-Object { -not $_.ok })
-if (Test-Path (Join-Path $out 'host-result.txt')) { Write-Host ("host check: " + (Get-Content (Join-Path $out 'host-result.txt') -Raw).Trim()) }
+$hostSteps = @(Get-Content (Join-Path $out 'host-steps.jsonl') -ErrorAction SilentlyContinue | ForEach-Object { $_ | ConvertFrom-Json })
+foreach ($h in $hostSteps) { Write-Host ("[{0}] host:{1,-15} {2}  {3}" -f $h.time, $h.step, $(if ($h.ok) { 'ok' } else { 'FAILED' }), $h.detail) }
+$results += $hostSteps
+$failed = @($results | Where-Object { -not $_.ok })
+if (Test-Path (Join-Path $out 'host-result.txt')) {
+    $hr = (Get-Content (Join-Path $out 'host-result.txt') -Raw).Trim()
+    Write-Host "host check: $hr"
+    if ($hr -ne 'ok' -and $hostSteps.Count -eq 0) { $failed += [pscustomobject]@{ step = 'host'; ok = $false } }
+}
 Write-Host ("{0} step(s), {1} failed." -f $results.Count, $failed.Count)
 if ($failed.Count -gt 0) { exit 1 }

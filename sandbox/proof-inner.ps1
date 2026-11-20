@@ -193,7 +193,11 @@ if ($cfg.serverUrl -and $cfg.groupId) {
         & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'scripts\remote\Install-MeshAgent.ps1') -ServerUrl $cfg.serverUrl -GroupId $cfg.groupId | Out-Null
         $s = Get-Service 'Mesh Agent' -ErrorAction Stop
         Assert-That ($s.Status -eq 'Running') "agent $($s.Status)"
-        'agent running'
+        $nodeId = Get-MeshNodeId
+        Assert-That ([bool]$nodeId) 'the agent gave no node id'
+        # For the host side's devices.json (a throwaway Sandbox device in the Proofs group).
+        Set-Content -LiteralPath "$out\nodeid.txt" -Value $nodeId -Encoding ascii
+        'agent running; node id handed to the host'
     }
     # The host side now runs its checks (port map, SSH, Claude Code). It writes C:\out\host-done when finished.
     Write-Step 'waiting-for-host' $true 'agent online; waiting for the host-side checks'

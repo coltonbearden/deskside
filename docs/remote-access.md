@@ -25,12 +25,22 @@
   Sources: Microsoft Learn's OpenSSH install, configuration and key-management pages.
 - **The route**: MeshCmd's `route` action maps a free local port to port 22 on the PC, through the server (MeshCentral
   docs, *MeshCmd*). MeshCmd itself is downloaded from the server (`/meshagents?meshcmd=4`), so its version always
-  matches. The action file carrying the login is deleted as soon as MeshCmd has read it.
+  matches. The action file carrying the login is deleted as soon as MeshCmd has read it. MeshCmd checks the server by
+  `serverId` (its certificate's key hash) or, when that's absent, by `serverHttpsHash` (the TLS certificate's
+  fingerprint). Behind a proxy that presents its own certificate only the fingerprint works: MeshCmd prints it as
+  `Server TLS hash:` when run once with a dummy hash, and it must be read again when the proxy's certificate changes.
+  `relayUrl` in `meshcentral.json` points MeshCmd at a relay address other than the agents' one (for example, agents
+  on a public address and the console on a private one). deskside never sets MeshCmd's `debugLevel`: above 0 it prints
+  the login.
+- **The device id**: `Install-MeshAgent.ps1` records the agent's MeshCentral node id (`MeshAgent.exe -nodeid`, turned
+  into `node//...`) in its run record, which the console copies into `devices.json`.
 - **The login** for MeshCmd and for removing devices is a MeshCentral login token kept in a password manager and read
   by reference (`meshcentral.json` in the private records store); nothing about the server lives in this repo.
 - **Removal**: `scripts/remote/Remove-RemoteHelp.ps1` (the person can run it from the desktop shortcut) uninstalls the
   agent, the SSH setup and the key, and checks nothing is left. Uninstalling an agent doesn't delete the device on the
-  server, so the helper also runs `scripts/console/Remove-DesksideDevice.ps1`.
+  server, so the helper also runs `scripts/console/Remove-DesksideDevice.ps1`. A relay-only console login can't delete
+  devices: by default the script prints the web page's steps (*Actions > Delete Device*) and `-RemovedInWebUi` then marks
+  the device removed; with `meshctrl` and a `removeLogin` allowed to delete devices set, it removes it itself.
 
 ## The private records store
 
@@ -38,7 +48,8 @@ A separate private repo (default `~\Projects\deskside-records`, override with `D
 
 ```
 devices.json          [{ alias, meshNodeId, sshUser, profile, consent: { diagnose, onboard, remote } }]
-meshcentral.json      { serverUrl, groupId, serverId, serverHttpsHash, meshctrl, login: { userRef, passwordRef } }
+meshcentral.json      { serverUrl, relayUrl, groupRef, proofGroupRef, serverId | serverHttpsHash, meshctrl,
+                        login: { userRef, passwordRef }, removeLogin }   (refs are 1Password op:// references)
 devices/<alias>/runs  run folders pulled back from the PC (records, summaries, transcripts)
 devices/<alias>/health  the health sweep's records
 ```
