@@ -12,7 +12,8 @@
 - **In flight:** the end-to-end proof's remote half (agent online on the server, SSH through MeshCentral's port map,
   Claude Code running the diagnostics remotely, device removed from the server) waits for the MeshCentral server.
   Everything up to and including loopback SSH and removal is proven in Windows Sandbox from the README's one-liner,
-  15 of 15 steps at 401f197 (docs/sandbox-proof.md, 2026-11-19).
+  19 of 19 steps at a40e3d2 (docs/sandbox-proof.md, 2026-11-19). Not yet run anywhere: the console scripts
+  (they need the server), the developer profile (WSL needs nested virtualization) and the agent install.
 - **Waiting on the owner:** the `deskside-ssh` SSH Key item in 1Password (Personal vault), whose public key the
   `enroll` skill installs on each PC; Dependabot's PR #1 (actions/checkout 4 to 7, checks green).
 - **How a failure reaches the owner:** CI failures show on GitHub. The health sweep (health/Invoke-HealthSweep.ps1)
