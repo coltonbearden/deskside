@@ -49,7 +49,9 @@ try {
     $before = (& ssh.exe @ssh $target 'Get-ChildItem C:\ProgramData\deskside\data\runs -Directory -EA SilentlyContinue | ForEach-Object Name') -split "`r?`n" | Where-Object { $_ }
     if ($Arguments -match '[;|&`\r\n]') { throw 'Arguments may not contain ; | & backtick or line breaks.' }
     $argText = $Arguments
-    $remote = "& 'C:\ProgramData\deskside\app\scripts\$Script' $argText"
+    # Process-scope bypass, as bootstrap and the Sandbox proof use: a PC on the default Restricted policy refuses a
+    # bare '& script.ps1', and this changes no policy that outlives the run.
+    $remote = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\ProgramData\deskside\app\scripts\$Script' $argText"
     & ssh.exe @ssh $target $remote
     $code = $LASTEXITCODE
     $after = (& ssh.exe @ssh $target 'Get-ChildItem C:\ProgramData\deskside\data\runs -Directory -EA SilentlyContinue | ForEach-Object Name') -split "`r?`n" | Where-Object { $_ }

@@ -79,7 +79,9 @@ try {
         $prompt = "Use the diagnose skill on the PC with alias $Alias. Add -Arguments '-Quick'. Then give the summary as the skill says."
         $allowed = 'PowerShell(pwsh -File scripts/console/Invoke-DesksideRemote.ps1:*),Bash(pwsh -File scripts/console/Invoke-DesksideRemote.ps1:*),Read,Glob,Grep,Skill'
         Push-Location $root
-        try { $reply = ($prompt | & claude -p --allowedTools $allowed --max-turns 20 2>&1 | Out-String) } finally { Pop-Location }
+        # The proof must not be able to patch the code it proves: no edits, only the console's own runner.
+        $denied = 'Edit,Write,NotebookEdit'
+        try { $reply = ($prompt | & claude -p --allowedTools $allowed --disallowedTools $denied --max-turns 20 2>&1 | Out-String) } finally { Pop-Location }
         $rec = Get-ChildItem -Path (Join-Path $store "devices\$Alias\runs") -Filter record.json -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Directory.Name -like '*-diagnose' } | Select-Object -First 1
         $valid = $false
         if ($rec) { try { $valid = ((Get-Content -LiteralPath $rec.FullName -Raw | ConvertFrom-Json).schema -eq 'deskside.record/v1') } catch { $valid = $false } }
