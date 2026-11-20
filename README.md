@@ -14,7 +14,11 @@ When someone's new PC needs setting up, or an old one starts acting up, deskside
 - **Remote help afterwards.** The [MeshCentral](https://github.com/Ylianst/MeshCentral) agent connects the PC to your
   own MeshCentral server, and an OpenSSH server that listens only on the PC itself lets you run deskside's scripts
   through MeshCentral's port mapping. SSH is never open on their home network. Screen, terminal and file sessions show the
-  person a notice; background runs over the port map don't, which the consent wording tells them up front.
+  person MeshCentral's notice; when you connect over SSH a message on their screen says so and what you're doing, and
+  another says when you've finished. The scheduled check every 6 hours only reads and shows nothing.
+- **One-click help.** An *Ask &lt;you&gt; for help* button on their desktop and Start menu sends you a help request
+  through [MeshCentral Assistant](https://github.com/Ylianst/MeshCentralAssistant), beside the agent; your server
+  emails it to you.
 - **A Claude Code console.** [`.claude/`](.claude) holds skills (`connect`, `diagnose`, `onboard`, `apply-settings`,
   `undo`, `report`, `enroll`, `remove`) for running all of this from *your* machine. Claude Code never runs on, or
   signs in from, their PC.
@@ -65,7 +69,7 @@ scripts/diagnose      read-only health check
 scripts/onboard       consent, the yes/no change list, onboarding flows, app removal
 scripts/install       winget repair, install profiles, Winget-AutoUpdate
 scripts/settings      the settings baseline and undo
-scripts/remote        MeshCentral agent, loopback-only SSH, remove-everything
+scripts/remote        MeshCentral agent, help button, loopback-only SSH, the SSH notice, remove-everything
 scripts/console       your side: port map, remote runs, device removal (PowerShell 7)
 health/               the scheduled health sweep (runs beside your MeshCentral server)
 catalog/              profiles, settings, checks, junk and remote-tool lists, Windows support dates
@@ -91,5 +95,14 @@ More: [how it works](docs/how-it-works.md) · [safety model](docs/safety.md) · 
 
 ## Licence
 
-[MIT](LICENSE). deskside downloads, and doesn't include, [Winget-AutoUpdate](https://github.com/Romanitho/Winget-AutoUpdate)
-(MIT) and MeshCentral's agent and MeshCmd (Apache-2.0) from their own sources.
+[MIT](LICENSE).
+
+### Third-party software
+
+deskside downloads these from their own sources and doesn't include them:
+
+| Software | Licence | Credit | Where it comes from |
+|---|---|---|---|
+| [Winget-AutoUpdate](https://github.com/Romanitho/Winget-AutoUpdate) | MIT | Romanitho | its GitHub release |
+| [MeshCentral](https://github.com/Ylianst/MeshCentral) agent and MeshCmd | Apache-2.0 | Ylian Saint-Hilaire and contributors | your own MeshCentral server |
+| [MeshCentral Assistant](https://github.com/Ylianst/MeshCentralAssistant) (the help button) | Apache-2.0 | Copyright 2009-2022 Intel Corporation | your own MeshCentral server (its monitor-only download) |

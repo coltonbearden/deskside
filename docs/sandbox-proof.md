@@ -33,11 +33,16 @@ the Sandbox's logon command and writes one JSON line per step.
 | ssh-login | the helper's key signs in; a password sign-in is refused |
 | ssh-not-on-network | port 22 doesn't answer on the PC's network address |
 | mesh-agent | the MeshCentral agent installs and runs (needs `-ServerUrl` and `-GroupId`) |
-| remove-remote-help | agent, sshd, key, shortcut and remote consent are all gone |
+| help-button | the help button installs from the server's monitor-only Assistant (server and group read from the agent), runs in the signed-in session, and its weekly refresh, run as SYSTEM, finds it current |
+| help-request | the button's script sends a two-line request as one line; Assistant's own log shows `requesthelp` going to the agent (the mail is checked at inbox@) |
+| notice-seen | the console's "is connected" message appeared in the signed-in session, `notice.json` says the closing message was sent, and it appeared once the first closed itself (Windows shows one message at a time) |
+| sweep-silent | the diagnostics run as SYSTEM with no SSH, as the scheduled check runs them: no message, no notice in the record |
+| remove-remote-help | agent, help button (program, shortcuts, task, setting), sshd, key, shortcut and remote consent are all gone |
 
 With a server (`-Remote`), the Sandbox waits after `mesh-agent` while the host check runs on the helper's machine:
-`host:route-ssh` (the port map and SSH through it) and `host:claude-diagnose` (Claude Code running the diagnostics
-remotely). The Proofs group removes the device from the server when the agent is uninstalled.
+`host:route-ssh` (the port map and SSH through it), `host:real-key` (the console's own deskside-ssh key from
+1Password's agent, named by its public key), `host:claude-diagnose` (Claude Code running the diagnostics remotely)
+and `host:ssh-notice` (that run's record says the notice reached the one signed-in session). The Proofs group removes the device from the server when the agent is uninstalled.
 
 ## Results
 
@@ -65,6 +70,18 @@ remotely). The Proofs group removes the device from the server when the agent is
   remove-remote-help (nothing left behind). The server's admin side confirmed the Proofs group held no device after
   the first run's agent left.
 
+- 2026-11-20, `-Source local -Remote` (working tree on d6fbafe, before the push): **29 of 29 passed** in the fourth run of
+  the day. help-button (Assistant from the server's monitor-only download, signature Valid, running in session 1; the
+  weekly refresh as SYSTEM read the server and group from the agent and found it current; no update dialog), help-request
+  (two lines sent as one; Assistant's log shows `requesthelp` to the agent; the server's mail reached inbox@ once the
+  Proofs group's help-request email was on, seen by the owner for the 16:42 request), host:real-key (deskside-ssh from
+  1Password's agent, named by its public key with IdentitiesOnly; elevated login), host:claude-diagnose and
+  host:ssh-notice (the record says sentBy console, signedIn 1, shown 1), notice-seen ("is connected" at 17:49:37; the
+  closing message at 17:54:37, once the first had closed itself: Windows shows a session's messages one at a time),
+  sweep-silent (diagnose as SYSTEM: no message, no notice), remove-remote-help (nothing left, help button included); no
+  `deskside-route-*` folder left on the helper's machine. Earlier runs that day: the first two failed only notice-seen
+  (the closing message queued behind an open first one, found by that step), the third only on a 1Password prompt
+  nobody approved.
 `-Remote` takes the server and the Proofs group from the private records store. The host half is
 `sandbox/Invoke-HostCheck.ps1`: a throwaway records store with only the Sandbox in it, the proof's throwaway key
 (`DESKSIDE_SSH_IDENTITY`), and Claude Code allowed only the console's runner and reading.

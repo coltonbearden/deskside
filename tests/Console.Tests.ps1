@@ -72,13 +72,87 @@ Describe 'Start-MeshRoute refuses a public relay with only a fingerprint' {
 }
 
 Describe 'Get-SshArgument' {
-    It 'starts with the port and adds the proof key only when asked' {
+    It 'starts with the port and names the deskside-ssh key, so the agent offers that key only' {
         $env:DESKSIDE_SSH_IDENTITY = $null
+        Mock -ModuleName Deskside.Console Get-SshPublicKeyFile { 'C:\k\deskside-ssh.pub' }
         $a = Get-SshArgument -Route ([pscustomobject]@{ LocalPort = 5000 }) -Device $Device
         $a[0..1] | Should -Be @('-p', 5000)
-        $a | Should -Not -Contain '-i'
+        $i = [array]::IndexOf($a, '-i')
+        $a[$i + 1] | Should -Be 'C:\k\deskside-ssh.pub'
+        $a | Should -Contain 'IdentitiesOnly=yes'
+        $a | Should -Not -Contain 'IdentityAgent=none'
+    }
+    It 'uses the proof key instead when asked, with no agent' {
         $env:DESKSIDE_SSH_IDENTITY = 'C:\proof_key'
-        try { Get-SshArgument -Route ([pscustomobject]@{ LocalPort = 5000 }) -Device $Device | Should -Contain 'IdentitiesOnly=yes' }
-        finally { $env:DESKSIDE_SSH_IDENTITY = $null }
+        try {
+            $a = Get-SshArgument -Route ([pscustomobject]@{ LocalPort = 5000 }) -Device $Device
+            $a | Should -Contain 'C:\proof_key'
+            $a | Should -Contain 'IdentityAgent=none'
+        } finally { $env:DESKSIDE_SSH_IDENTITY = $null }
+    }
+}
+
+Describe 'Get-SshPublicKeyFile' {
+    It 'refuses without sshPublicKeyRef' {
+        { Get-SshPublicKeyFile -Settings ([pscustomobject]@{ serverUrl = 'https://mesh.example' }) } | Should -Throw '*sshPublicKeyRef*'
+    }
+}
+
+Describe 'Get-HelperName' {
+    It 'reads helperName and defaults to "Your helper"' {
+        Get-HelperName -Settings ([pscustomobject]@{ helperName = 'Sam' }) | Should -Be 'Sam'
+        Get-HelperName -Settings ([pscustomobject]@{ serverUrl = 'x' }) | Should -Be 'Your helper'
+    }
+    It 'refuses a name that could break the remote command' {
+        { Get-HelperName -Settings ([pscustomobject]@{ helperName = "Sam'; rm" }) } | Should -Throw
+    }
+}
+
+Describe 'Get-NoticeActivity' {
+    It 'names what the helper is doing from the script' {
+        Get-NoticeActivity -Script 'diagnose\Invoke-Diagnose.ps1' | Should -Be 'diagnose'
+        Get-NoticeActivity -Script 'settings\Undo-DesksideRun.ps1' | Should -Be 'undo'
+        Get-NoticeActivity -Script 'settings\Set-Baseline.ps1' | Should -Be 'settings'
+        Get-NoticeActivity -Script 'install\Install-Profile.ps1' | Should -Be 'onboard'
+        Get-NoticeActivity -Script 'remote\Install-HelpButton.ps1' | Should -Be 'remote'
+    }
+}
+
+Describe 'Invoke-DesksideRemote' {
+    It 'sends the Start notice before the script and the End notice in finally' {
+        $text = Get-Content (Join-Path $Root 'scripts\console\Invoke-DesksideRemote.ps1') -Raw
+        $text.IndexOf('-Phase Start') | Should -BeLessThan $text.IndexOf('& ssh.exe @ssh $target $remote')
+        $text | Should -Match '(?s)finally \{.*-Phase End'
+        $text | Should -Match "DESKSIDE_VIA = 'ssh'"
+    }
+}
+
+Describe 'Port-map cleanup' {
+    It 'removes the folder and the login file' {
+        $d = Join-Path $TestDrive 'route1'; New-Item -ItemType Directory $d | Out-Null
+        Set-Content (Join-Path $d 'meshaction.txt') 'x'; Set-Content (Join-Path $d 'err.txt') ''
+        Remove-RouteFolder -Path $d -LoginFile (Join-Path $d 'meshaction.txt')
+        Test-Path $d | Should -BeFalse
+    }
+    It 'says so, by name, when a file in the folder stays open' {
+        $d = Join-Path $TestDrive 'route2'; New-Item -ItemType Directory $d | Out-Null
+        $held = [IO.File]::Open((Join-Path $d 'err.txt'), 'Create', 'ReadWrite', 'None')
+        try {
+            Remove-RouteFolder -Path $d -LoginFile (Join-Path $d 'meshaction.txt') -WarningVariable w -WarningAction SilentlyContinue
+            ($w -join ' ') | Should -Match ([regex]::Escape($d))
+        } finally { $held.Dispose() }
+    }
+    It 'stops when the login file cannot be removed' {
+        $d = Join-Path $TestDrive 'route3'; New-Item -ItemType Directory $d | Out-Null
+        $login = Join-Path $d 'meshaction.txt'
+        $held = [IO.File]::Open($login, 'Create', 'ReadWrite', 'None')
+        try { { Remove-RouteFolder -Path $d -LoginFile $login } | Should -Throw '*login file*' }
+        finally { $held.Dispose() }
+    }
+    It 'waits for MeshCmd to exit after Kill' {
+        $text = Get-Content (Join-Path $Root 'scripts\console\Deskside.Console.psm1') -Raw
+        $text | Should -Match 'Kill\(\) \} catch'
+        $text | Should -Match 'WaitForExit\(15000\)'
+        $text | Should -Not -Match 'Remove-Item -LiteralPath \$(work|Route\.WorkDir|actionPath)[^\n]*SilentlyContinue'
     }
 }

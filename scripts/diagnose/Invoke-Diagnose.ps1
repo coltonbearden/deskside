@@ -426,6 +426,24 @@ Invoke-Section -Run $run -Name 'sshd' -ScriptBlock {
     [ordered]@{ installed = $true; status = [string]$svc.Status; listen = $listen }
 }
 
+# --- The help button (MeshCentral Assistant) and its weekly refresh ----------------------------------------------
+Invoke-Section -Run $run -Name 'helpButton' -ScriptBlock {
+    $hb = Get-HelpButtonPath
+    if (-not (Test-Path -LiteralPath $hb.Exe)) { return [ordered]@{ installed = $false } }
+    $state = $null
+    if (Test-Path -LiteralPath $hb.StateFile) { try { $state = Get-Content -LiteralPath $hb.StateFile -Raw | ConvertFrom-Json } catch { $state = $null } }
+    $lastOk = $null
+    if ($state -and $state.PSObject.Properties['lastSuccessUtc'] -and $state.lastSuccessUtc) { $lastOk = [datetime]::Parse($state.lastSuccessUtc) }
+    elseif ($state -and $state.result -notlike 'failed*') { $lastOk = [datetime]::Parse($state.lastUtc) }
+    $task = Get-ScheduledTask -TaskPath $hb.TaskPath -TaskName $hb.TaskName -ErrorAction SilentlyContinue
+    if (-not $task -or -not $lastOk -or ((Get-Date) - $lastOk).TotalDays -gt 21) {
+        $text = 'never'; if ($lastOk) { $text = $lastOk.ToString('MMMM d, yyyy') }
+        Add-Check $run 'help.refresh-failing' @($text)
+    } else { Add-Check $run 'help.button' @($lastOk.ToString('MMMM d, yyyy')) }
+    $okUtc = $null; if ($lastOk) { $okUtc = $lastOk.ToUniversalTime().ToString('o') }
+    [ordered]@{ installed = $true; running = @(Get-Process -Name $hb.ProcessName -ErrorAction SilentlyContinue).Count; task = [bool]$task; lastSuccessUtc = $okUtc }
+}
+
 # --- App updates (Winget-AutoUpdate) ------------------------------------------------------------------------------
 Invoke-Section -Run $run -Name 'appUpdates' -ScriptBlock {
     $task = $null

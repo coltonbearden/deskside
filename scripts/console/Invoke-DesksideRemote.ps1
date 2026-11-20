@@ -11,6 +11,9 @@
     4. Copies new run folders back to <records>\devices\<alias>\runs\ with scp. Diagnose runs are then deleted from the
        PC; change runs stay there too, because undo reads their undo.json on the PC.
     5. Closes the port map.
+    Before the script (or shell) the person signed in at the PC gets a message saying the helper is connected and
+    what he is doing (scripts\remote\Send-HelperNotice.ps1), and another when it ends. If the first can't be sent,
+    nothing runs.
     On screen: the script's own counts-only output. Names and app lists stay in the records.
 
 .PARAMETER Script
@@ -39,19 +42,28 @@ Import-Module (Join-Path $PSScriptRoot 'Deskside.Console.psm1') -Force
 $device = Get-DesksideDevice -Alias $Alias
 Assert-RemoteConsent -Device $device
 
+if (-not $Shell -and $Script -notmatch '^[A-Za-z]+\\[A-Za-z-]+\.ps1$') { throw "Script must look like 'diagnose\Invoke-Diagnose.ps1'." }
+$helper = Get-HelperName
+$activity = if ($Shell) { 'shell' } else { Get-NoticeActivity -Script $Script }
 $route = Start-MeshRoute -Device $device
+$noticed = $false
 try {
     $ssh = Get-SshArgument -Route $route -Device $device
     $target = "$($device.sshUser)@127.0.0.1"
+    # The person signed in at the PC is told before anything runs, and again when it ends (consent wording, D-012).
+    $n = Send-RemoteNotice -Ssh $ssh -Target $target -Phase Start -Activity $activity -HelperName $helper
+    $noticed = $true
+    Write-Information ("Notice on the PC: {0} signed in, {1} shown." -f $n.signedIn, $n.shown) -InformationAction Continue
     if ($Shell) { & ssh.exe @ssh -o BatchMode=no $target; return }
 
-    if ($Script -notmatch '^[A-Za-z]+\\[A-Za-z-]+\.ps1$') { throw "Script must look like 'diagnose\Invoke-Diagnose.ps1'." }
     $before = (& ssh.exe @ssh $target 'Get-ChildItem C:\ProgramData\deskside\data\runs -Directory -EA SilentlyContinue | ForEach-Object Name') -split "`r?`n" | Where-Object { $_ }
     if ($Arguments -match '[;|&`\r\n]') { throw 'Arguments may not contain ; | & backtick or line breaks.' }
     $argText = $Arguments
     # Process-scope bypass, as bootstrap and the Sandbox proof use: a PC on the default Restricted policy refuses a
     # bare '& script.ps1', and this changes no policy that outlives the run.
-    $remote = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\ProgramData\deskside\app\scripts\$Script' $argText"
+    # DefaultShell is Windows PowerShell (Enable-LoopbackSsh), so the run is marked as the helper's SSH run in its
+    # environment as well as by sshd's SSH_CONNECTION.
+    $remote = "`$env:DESKSIDE_VIA = 'ssh'; `$env:DESKSIDE_HELPER = '$helper'; powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\ProgramData\deskside\app\scripts\$Script' $argText"
     & ssh.exe @ssh $target $remote
     $code = $LASTEXITCODE
     $after = (& ssh.exe @ssh $target 'Get-ChildItem C:\ProgramData\deskside\data\runs -Directory -EA SilentlyContinue | ForEach-Object Name') -split "`r?`n" | Where-Object { $_ }
@@ -69,5 +81,9 @@ try {
     Write-Information "Brought back $($new.Count) run(s) to the records store." -InformationAction Continue
     if ($code -ne 0) { throw "The script on the PC exited with $code." }
 } finally {
+    if ($noticed) {
+        try { $null = Send-RemoteNotice -Ssh $ssh -Target $target -Phase End -Activity $activity -HelperName $helper }
+        catch { Write-Warning "The closing notice wasn't sent: $($_.Exception.Message)" }
+    }
     Stop-MeshRoute -Route $route
 }

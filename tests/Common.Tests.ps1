@@ -145,3 +145,73 @@ Describe 'Run records' {
         $u[1].item | Should -Be 'two'
     }
 }
+
+Describe 'The notice when the helper connects over SSH' {
+    BeforeAll { $env:DESKSIDE_DATA = Join-Path $TestDrive 'data-notice' }
+    AfterAll { Remove-Item Env:\DESKSIDE_DATA, Env:\DESKSIDE_VIA, Env:\DESKSIDE_NOTICE_SENT, Env:\DESKSIDE_HELPER -ErrorAction SilentlyContinue }
+    BeforeEach {
+        Remove-Item $env:DESKSIDE_DATA -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item Env:\DESKSIDE_VIA, Env:\DESKSIDE_NOTICE_SENT, Env:\DESKSIDE_HELPER, Env:\SSH_CONNECTION -ErrorAction SilentlyContinue
+    }
+    It 'says who is connected and what he is doing, and when he has finished' {
+        $s = Get-HelperNoticeText -Phase Start -Activity diagnose -HelperName 'Sam'
+        $s.Title | Should -Be 'deskside - Sam is connected'
+        $s.Text | Should -Match 'health check.*changes nothing'
+        (Get-HelperNoticeText -Phase End -HelperName 'Sam').Text | Should -Match 'Sam has finished'
+    }
+    It 'sends nothing for a run that is not over SSH (the scheduled check, a person at the PC)' {
+        Mock -ModuleName Deskside.Common Send-SessionNotice { throw 'must not send' }
+        $run = New-DesksideRun -Kind 'diagnose' -NoTranscript
+        $run.Data.Contains('notice') | Should -BeFalse
+        Should -Invoke -ModuleName Deskside.Common Send-SessionNotice -Times 0
+    }
+    It 'stamps the console''s Start notice into an SSH run, without sending another' {
+        $env:DESKSIDE_VIA = 'ssh'
+        Mock -ModuleName Deskside.Common Send-SessionNotice { [pscustomobject]@{ signedIn = 1; shown = 1 } }
+        Send-HelperNotice -Phase Start -Activity diagnose -SentBy console | Out-Null
+        $run = New-DesksideRun -Kind 'diagnose' -NoTranscript
+        $run.Data['notice'].sentBy | Should -Be 'console'
+        $run.Data['notice'].shown | Should -Be 1
+        $run.NoticeSent | Should -BeFalse
+        Should -Invoke -ModuleName Deskside.Common Send-SessionNotice -Times 1 -Exactly
+    }
+    It 'sends the notice itself when the console did not, and the closing one at the end' {
+        $env:SSH_CONNECTION = '127.0.0.1 5000 127.0.0.1 22'
+        Mock -ModuleName Deskside.Common Send-SessionNotice { [pscustomobject]@{ signedIn = 1; shown = 1 } }
+        $run = New-DesksideRun -Kind 'settings' -NoTranscript
+        $run.Data['notice'].sentBy | Should -Be 'run'
+        $run.NoticeSent | Should -BeTrue
+        Complete-DesksideRun -Run $run | Out-Null
+        Should -Invoke -ModuleName Deskside.Common Send-SessionNotice -Times 2 -Exactly
+        (Get-Content (Join-Path $env:DESKSIDE_DATA 'notice.json') -Raw | ConvertFrom-Json).phase | Should -Be 'End'
+    }
+    It 'records when no one was signed in to see it' {
+        $env:DESKSIDE_VIA = 'ssh'
+        Mock -ModuleName Deskside.Common Get-SignedInSession { }
+        $run = New-DesksideRun -Kind 'diagnose' -NoTranscript
+        $run.Data['notice'].signedIn | Should -Be 0
+        @($run.Findings | Where-Object { $_.id -eq 'notice.nobody' }).Count | Should -Be 1
+    }
+    It 'sends it once when one run starts another' {
+        $env:DESKSIDE_VIA = 'ssh'
+        Mock -ModuleName Deskside.Common Send-SessionNotice { [pscustomobject]@{ signedIn = 1; shown = 1 } }
+        $null = New-DesksideRun -Kind 'onboard' -NoTranscript
+        $inner = New-DesksideRun -Kind 'apps' -NoTranscript
+        $inner.NoticeSent | Should -BeFalse
+        Should -Invoke -ModuleName Deskside.Common Send-SessionNotice -Times 1 -Exactly
+    }
+    It 'finds signed-in sessions through wtsapi32 on this machine' {
+        @(Get-SignedInSession).Count | Should -BeGreaterOrEqual 0
+    }
+}
+
+Describe 'Get-MeshAgentSetting' {
+    It 'reads the server and the group id from the agent''s .msh' {
+        $msh = Join-Path $TestDrive 'MeshAgent.msh'
+        Set-Content $msh -Value @('MeshName=Proofs', ('MeshID=0x' + ('FB' * 48)), 'ServerID=AB', 'MeshServer=wss://mesh.example:8443/agent.ashx')
+        $a = Get-MeshAgentSetting -MshPath $msh
+        $a.ServerUrl | Should -Be 'https://mesh.example:8443'
+        $a.GroupId | Should -Be ('@$v7' * 16)
+    }
+    It 'returns nothing without one' { Get-MeshAgentSetting -MshPath (Join-Path $TestDrive 'none.msh') | Should -BeNullOrEmpty }
+}

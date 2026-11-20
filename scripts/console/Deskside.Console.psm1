@@ -53,8 +53,10 @@ function Get-MeshLogin {
     <# Reads the automation login (a MeshCentral login token: user and key) from 1Password by reference. #>
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Settings)
-    $user = (& op read $Settings.login.userRef).Trim()
-    $pass = (& op read $Settings.login.passwordRef).Trim()
+    # op prints nothing when its 1Password approval times out, so an empty answer is named rather than trimmed.
+    $user = ((& op read $Settings.login.userRef) | Out-String).Trim()
+    if (-not $user) { throw '1Password did not return the MeshCentral login (approve 1Password''s prompt for op, then run again).' }
+    $pass = ((& op read $Settings.login.passwordRef) | Out-String).Trim()
     if (-not $user -or -not $pass) { throw '1Password did not return the MeshCentral login.' }
     return [pscustomobject]@{ User = $user; Password = $pass }
 }
@@ -225,14 +227,15 @@ function Start-MeshRouteOnce {
         Start-Sleep -Milliseconds 500
         if ((Get-Content -LiteralPath (Join-Path $work 'out.txt') -Raw -ErrorAction SilentlyContinue) -match 'Redirecting local port') { $ready = $true; break }
     }
-    # The action file holds the login: remove it as soon as MeshCmd has read it.
-    Remove-Item -LiteralPath $actionPath -Force -ErrorAction SilentlyContinue
+    # The action file holds the login: remove it as soon as MeshCmd has read it, and stop if it can't be.
     if (-not $ready) {
         $err = (Get-Content -LiteralPath (Join-Path $work 'out.txt'), (Join-Path $work 'err.txt') -Raw -ErrorAction SilentlyContinue) -join ' '
-        if (-not $proc.HasExited) { $proc.Kill() }
-        Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+        Stop-MeshCmdProcess -Process $proc
+        Remove-RouteFolder -Path $work -LoginFile $actionPath
         throw "The port map to '$($Device.alias)' didn't start: $err"
     }
+    try { Remove-RouteLoginFile -Path $actionPath }
+    catch { Stop-MeshCmdProcess -Process $proc; throw }
     return [pscustomobject]@{ LocalPort = $port; Process = $proc; WorkDir = $work; Alias = $Device.alias }
 }
 
@@ -240,8 +243,43 @@ function Stop-MeshRoute {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Stops the local MeshCmd process Start-MeshRoute started.')]
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Route)
-    if (-not $Route.Process.HasExited) { $Route.Process.Kill() }
-    Remove-Item -LiteralPath $Route.WorkDir -Recurse -Force -ErrorAction SilentlyContinue
+    Stop-MeshCmdProcess -Process $Route.Process
+    Remove-RouteFolder -Path $Route.WorkDir -LoginFile (Join-Path $Route.WorkDir 'meshaction.txt')
+}
+
+function Stop-MeshCmdProcess {
+    <# Kill() returns before the process is gone (it runs asynchronously), so wait for it before touching its files. #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Stops the local MeshCmd process Start-MeshRoute started.')]
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Process)
+    if (-not $Process.HasExited) { try { $Process.Kill() } catch { Write-Verbose "MeshCmd had already exited: $($_.Exception.Message)" } }
+    if (-not $Process.WaitForExit(15000)) { Write-Warning "MeshCmd (pid $($Process.Id)) didn't exit within 15 s." }
+}
+
+function Remove-RouteLoginFile {
+    <# Removes meshaction.txt (it holds the relay login), retrying briefly; throws if it is still there. #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Removes the console''s own temporary login file.')]
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+    for ($i = 0; $i -lt 20 -and (Test-Path -LiteralPath $Path); $i++) {
+        try { Remove-Item -LiteralPath $Path -Force -ErrorAction Stop } catch { Start-Sleep -Milliseconds 250 }
+    }
+    if (Test-Path -LiteralPath $Path) { throw "The port map's login file couldn't be removed: $Path. It holds the relay login: delete it by hand." }
+}
+
+function Remove-RouteFolder {
+    <#
+        Removes a port map's work folder after MeshCmd has exited, retrying while redirected output files are still
+        being closed. The login file must go (throws if it can't); a folder left without it is named in a warning.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Removes the console''s own temporary folder.')]
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$LoginFile)
+    Remove-RouteLoginFile -Path $LoginFile
+    for ($i = 0; $i -lt 20 -and (Test-Path -LiteralPath $Path); $i++) {
+        try { Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop } catch { Start-Sleep -Milliseconds 250 }
+    }
+    if (Test-Path -LiteralPath $Path) { Write-Warning "The port map's work folder couldn't be removed: $Path (it holds no login). Delete it by hand." }
 }
 
 function Get-SshArgument {
@@ -256,7 +294,81 @@ function Get-SshArgument {
     $a = @('-p', $Route.LocalPort, '-o', "HostKeyAlias=deskside-$($Device.alias)", '-o', "UserKnownHostsFile=$kh",
         '-o', 'StrictHostKeyChecking=accept-new', '-o', 'PasswordAuthentication=no', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20')
     if ($env:DESKSIDE_SSH_IDENTITY) { $a += @('-i', $env:DESKSIDE_SSH_IDENTITY, '-o', 'IdentitiesOnly=yes', '-o', 'IdentityAgent=none') }
+    else { $a += @('-i', (Get-SshPublicKeyFile), '-o', 'IdentitiesOnly=yes') }
     return $a
+}
+
+function Get-SshPublicKeyFile {
+    <#
+    .SYNOPSIS
+        The deskside-ssh public key as a file, so ssh asks 1Password's agent for that one key only.
+    .DESCRIPTION
+        1Password's agent offers every key it holds, and an OpenSSH server refuses after MaxAuthTries (6) keys
+        ("Too many authentication failures"). Naming the public key with IdentitiesOnly is 1Password's own fix. The
+        key is read from meshcentral.json's sshPublicKeyRef (an op:// reference) into
+        %LOCALAPPDATA%\deskside\deskside-ssh.pub and read again when the reference returns something different.
+    #>
+    [CmdletBinding()]
+    param($Settings = (Get-MeshSetting))
+    if (-not ($Settings.PSObject.Properties['sshPublicKeyRef'] -and $Settings.sshPublicKeyRef)) { throw 'meshcentral.json needs sshPublicKeyRef (the op:// reference of the deskside-ssh public key).' }
+    $dir = Join-Path $env:LOCALAPPDATA 'deskside'
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $file = Join-Path $dir 'deskside-ssh.pub'
+    $pub = ((& op read $Settings.sshPublicKeyRef) | Out-String).Trim()
+    if ($pub -notmatch '^ssh-ed25519 [A-Za-z0-9+/=]+') { throw '1Password did not return the deskside-ssh public key.' }
+    $pub = ($pub -split '\s+')[0..1] -join ' '
+    if (-not (Test-Path -LiteralPath $file) -or (Get-Content -LiteralPath $file -Raw).Trim() -ne "$pub deskside-ssh") {
+        Set-Content -LiteralPath $file -Value "$pub deskside-ssh" -Encoding ascii
+    }
+    return $file
+}
+
+function Get-HelperName {
+    <# The name the person at the PC knows the helper by: meshcentral.json's helperName, never this repo. #>
+    [CmdletBinding()]
+    param($Settings = (Get-MeshSetting))
+    $name = 'Your helper'
+    if ($Settings.PSObject.Properties['helperName'] -and $Settings.helperName) { $name = [string]$Settings.helperName }
+    if ($name -notmatch '^[A-Za-z0-9 .-]{1,40}$') { throw 'meshcentral.json helperName may hold only letters, digits, spaces, dots and hyphens (40 at most).' }
+    return $name
+}
+
+function Get-NoticeActivity {
+    <# The notice's activity word for a script under scripts\ (same mapping as the PC side's ConvertTo-NoticeActivity). #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Script)
+    $folder = ($Script -split '\\')[0]
+    $name = ($Script -split '\\')[-1]
+    if ($name -match 'Undo') { return 'undo' }
+    switch ($folder) {
+        'diagnose' { return 'diagnose' }
+        'settings' { return 'settings' }
+        'onboard' { return 'onboard' }
+        'install' { return 'onboard' }
+        'remote' { return 'remote' }
+    }
+    return 'task'
+}
+
+function Send-RemoteNotice {
+    <#
+    .SYNOPSIS
+        Runs scripts\remote\Send-HelperNotice.ps1 on the PC over SSH and returns its counts (signedIn, shown).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string[]]$Ssh,
+        [Parameter(Mandatory)][string]$Target,
+        [Parameter(Mandatory)][ValidateSet('Start', 'End')][string]$Phase,
+        [Parameter(Mandatory)][string]$Activity,
+        [Parameter(Mandatory)][string]$HelperName
+    )
+    $cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\ProgramData\deskside\app\scripts\remote\Send-HelperNotice.ps1' -Phase $Phase -Activity $Activity -HelperName '$HelperName'"
+    $o = (& ssh.exe @Ssh $Target $cmd 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) { throw "The $Phase notice could not be sent (exit $LASTEXITCODE)." }
+    $line = ($o -split "`r?`n" | Where-Object { $_ -match '^\{.*"phase"' } | Select-Object -Last 1)
+    if (-not $line) { throw "The $Phase notice gave no counts." }
+    return ($line | ConvertFrom-Json)
 }
 
 Export-ModuleMember -Function *

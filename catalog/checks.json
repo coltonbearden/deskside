@@ -55,6 +55,8 @@
     "remote.mesh-agent": { "rank": "Info", "text": "deskside's remote help (MeshCentral agent) is installed." },
     "remote.sshd": { "rank": "Info", "text": "The SSH server is installed and listens on {0}." },
     "remote.sshd-exposed": { "rank": "FixNow", "text": "The SSH server listens on the network ({0}), not only on this PC." },
+    "help.button": { "rank": "Info", "text": "The help button is set up and was last refreshed from the server on {0}." },
+    "help.refresh-failing": { "rank": "FixSoon", "text": "The help button was last refreshed from the server on {0}; its weekly refresh isn't working." },
     "updates.wau-missing": { "rank": "FixSoon", "text": "Nothing keeps the apps on this PC updated automatically." },
     "updates.wau-failing": { "rank": "FixSoon", "text": "Automatic app updates last ran on {0} and did not succeed." },
     "updates.wau-ok": { "rank": "Info", "text": "Automatic app updates are set up and last ran on {0}." },

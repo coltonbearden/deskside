@@ -9,8 +9,10 @@
     the real records. Steps, each written to <out>\host-steps.jsonl:
       1. route-ssh       MeshCmd port map to the Sandbox's 127.0.0.1:22, SSH in with the proof key, read PowerShell's
                          version.
+      1b. real-key       the same route with the console's own deskside-ssh key from 1Password's agent (no proof key).
       2. claude-diagnose Claude Code, on this machine, runs the console's diagnose skill against the Sandbox; the run's
                          record must come back into the throwaway store.
+      3. ssh-notice      that record says the console's notice reached the Sandbox's signed-in session.
     The Sandbox is in the Proofs group, which removes the device from the server when it disconnects.
 #>
 [CmdletBinding()]
@@ -74,6 +76,24 @@ try {
     Write-HostStep 'route-ssh' $ok $detail
     if (-not $ok) { $failed++ }
 
+    # 1b. The console's own key: deskside-ssh through 1Password's agent, named by its public key file (no proof key).
+    if ($ok) {
+        $env:DESKSIDE_SSH_IDENTITY = $null
+        $kok = $false; $detail = ''
+        try {
+            $route = Start-MeshRoute -Device $device
+            try {
+                $ssh = Get-SshArgument -Route $route -Device $device
+                $o = (& ssh.exe @ssh "$($device.sshUser)@127.0.0.1" 'whoami /groups | Select-String -SimpleMatch S-1-16-12288 -Quiet' 2>&1 | Out-String).Trim()
+                $kok = ($LASTEXITCODE -eq 0 -and $o -eq 'True')
+                $detail = if ($kok) { 'deskside-ssh from 1Password''s agent, named by its public key with IdentitiesOnly; elevated login' } else { "ssh exit $LASTEXITCODE" }
+            } finally { Stop-MeshRoute -Route $route }
+        } catch { $detail = $_.Exception.Message }
+        $env:DESKSIDE_SSH_IDENTITY = $key
+        Write-HostStep 'real-key' $kok $detail
+        if (-not $kok) { $failed++ }
+    }
+
     # 2. Claude Code runs the diagnose skill against the Sandbox.
     if ($ok) {
         $prompt = "Use the diagnose skill on the PC with alias $Alias. Add -Arguments '-Quick'. Then give the summary as the skill says."
@@ -96,6 +116,16 @@ try {
         $valid = $valid -and $untouched
         Write-HostStep 'claude-diagnose' $valid $detail
         if (-not $valid) { $failed++ }
+
+        # 3. The notice: the pulled record says the console's notice reached the one signed-in session.
+        $nok = $false; $detail = 'no record'
+        if ($rec) {
+            $n = (Get-Content -LiteralPath $rec.FullName -Raw | ConvertFrom-Json).data.notice
+            $nok = ($n -and $n.sentBy -eq 'console' -and [int]$n.signedIn -eq 1 -and [int]$n.shown -eq 1)
+            $detail = if ($n) { "notice in the record: sentBy $($n.sentBy), signedIn $($n.signedIn), shown $($n.shown)" } else { 'the record has no notice' }
+        }
+        Write-HostStep 'ssh-notice' $nok $detail
+        if (-not $nok) { $failed++ }
     }
 } finally {
     $env:DESKSIDE_RECORDS = $saved.records

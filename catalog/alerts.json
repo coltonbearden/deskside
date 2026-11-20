@@ -9,6 +9,7 @@
     { "id": "windows-updates-stopped", "when": "olderThan", "path": "windowsUpdate.lastSuccessUtc", "days": 21, "message": "Windows hasn't installed an update for 3 weeks" },
     { "id": "app-updates-stopped", "when": "olderThan", "path": "appUpdates.lastRunUtc", "days": 21, "message": "app updates (Winget-AutoUpdate) haven't run for 3 weeks" },
     { "id": "restore-points-stopped", "when": "olderThan", "path": "backups.newestRestorePointUtc", "days": 30, "message": "no new restore point for a month" },
+    { "id": "help-button-stale", "when": "finding", "findings": ["help.refresh-failing"], "message": "the help button hasn't been refreshed from the server for 3 weeks" },
     { "id": "remote-tool", "when": "finding", "findings": ["remote.unknown-tools"], "message": "an unexpected remote-control app appeared" }
   ]
 }

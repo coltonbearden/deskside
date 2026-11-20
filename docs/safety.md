@@ -17,6 +17,7 @@ The rules live in the scripts, not in anyone's memory. Claude Code's settings ad
 | Transcript and record | every run writes `transcript.txt`, `record.json` (schema `deskside.record/v1`) and `summary.md` to `C:\ProgramData\deskside\data\runs\<run>`, readable by administrators only |
 | Counts only on screen | the console prints counts and plain sentences, never names, accounts or app lists |
 | Nothing pinned | apps always install at winget's latest; Winget-AutoUpdate keeps them current afterwards |
+| The person sees the helper arrive | `Invoke-DesksideRemote.ps1` sends a Start message to every signed-in session (`Send-HelperNotice.ps1`, WTSSendMessage) before a script or shell runs, and stops if it can't; an End message in `finally`. On the PC, `New-DesksideRun` sends the Start message itself for any run under SSH that the console didn't announce, and every SSH run's record holds `data.notice` (signed in, shown), with "No one was signed in" when nobody was. The scheduled check runs as SYSTEM without SSH and sends nothing (a test checks the sweep never does) |
 | One list, yes or no | `New-ChangeList.ps1` lists only recommended or questionable removals and settings the PC doesn't already have; apply scripts act only on `"decision": "yes"` |
 
 ## What "consent" records

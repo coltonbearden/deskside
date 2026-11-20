@@ -7,7 +7,7 @@
    Invoke-DesksideRemote.ps1                                                     |
      MeshCmd route  -- wss://<server>/meshrelay.ashx -->  relay  <-- agent --->  127.0.0.1:22  sshd
      127.0.0.1:<free port>                                                         keys only, no firewall rule
-     ssh / scp  (key from the helper's SSH agent)
+     ssh / scp  (deskside-ssh from the helper's SSH agent, named by its public key with IdentitiesOnly)
 ```
 
 - **First contact** is in person or over Quick Assist (the helper needs a Microsoft account; the person sharing
@@ -16,8 +16,9 @@
   `scripts/remote/Install-MeshAgent.ps1 -ServerUrl https://<server> -GroupId <mesh id>`. It downloads the group's
   64-bit agent (`/meshagents?id=4&meshid=...&installflags=0`), runs `-fullinstall` and leaves a *Remove remote help*
   shortcut on the desktop. The device group's notify setting shows the person a notice and a privacy bar for desktop,
-  terminal and file sessions. **A TCP port map (the SSH route below) shows nothing on the PC**, so the owner's consent
-  wording says so, and every run deskside makes over it is recorded on the PC in `C:\ProgramData\deskside\data\runs`.
+  terminal and file sessions. **A TCP port map (the SSH route below) shows nothing on the PC by itself**, so deskside
+  shows its own message (*The notice over SSH* below), and every run it makes over it is recorded on the PC in
+  `C:\ProgramData\deskside\data\runs`.
 - **SSH** is Windows' own OpenSSH Server, `ListenAddress 127.0.0.1`, `PasswordAuthentication no`,
   `AuthenticationMethods publickey`, the helper's key in `administrators_authorized_keys` with Microsoft's ACL, the
   installers' inbound firewall rules turned off. Where Windows can't add the optional feature (Windows Sandbox, a
@@ -36,12 +37,43 @@
   records it in `meshcentral.json` and warns. `relayUrl` in `meshcentral.json` points MeshCmd at a relay address other than the agents' one (for example, agents
   on a public address and the console on a private one). deskside never sets MeshCmd's `debugLevel`: above 0 it prints
   the login.
+- **The notice over SSH**: the console runs `scripts/remote/Send-HelperNotice.ps1 -Phase Start` over SSH before a script
+  or `-Shell`, and `-Phase End` afterwards. It shows a message box in every signed-in session (WTSSendMessage from the
+  elevated session-0 SSH login). Windows shows a session's messages one at a time (measured: a second box waited until
+  the first closed), so each closes itself after 5 minutes and the End message follows once the Start one is closed.
+  The message names the helper (`helperName` in
+  `meshcentral.json`, never this repo) and what he is doing, and writes `data\notice.json` (phase, time, counts).
+  sshd sets `SSH_CONNECTION` for the run and the console also sets `DESKSIDE_VIA=ssh`; with either, `New-DesksideRun`
+  stamps `data.notice` into the run's record, sends the Start message itself (and the End one when the run completes)
+  if the console's is missing or older than 10 minutes, and records "No one was signed in" when nobody was. A link that
+  drops can lose the End message; the consent wording says so. The health sweep's run-command runs as SYSTEM with no
+  SSH and shows nothing.
+- **The help button**: `scripts/remote/Install-HelpButton.ps1 -HelperName <name>` (after the agent) downloads
+  [MeshCentral Assistant](https://github.com/Ylianst/MeshCentralAssistant) (Apache-2.0, Intel) from the server's
+  *System tray, monitor only* link, `/meshagents?id=10006&meshid=<group>&ac=4` (read in MeshCentral 1.3.1's
+  `webserver.js`: `ac=4` adds no server details). It finds the installed agent through
+  `HKLM\SOFTWARE\Open Source\Mesh Agent` and its named pipe, so the agent's patched relay code stays the only one;
+  any other `ac` would make Assistant its own agent. The server and group come from the agent's own `MeshAgent.msh`.
+  It goes in `%ProgramFiles%\deskside\Help`, starts at every sign-in with `-noupdate` (an all-users Startup shortcut),
+  and *Ask &lt;name&gt; for help* on the public desktop and in the Start menu runs `Ask-ForHelp.ps1` as the person: it
+  asks what's wrong (optional), checks the agent is connected to the server, makes the text one line (a line break
+  loses the request, Assistant issue #50), closes their copy (one runs per PC) and starts it again with
+  `-help:"<text>"`. Assistant sends `requesthelp` to the agent; the server emails every user linked to the group who
+  ticked *Email for help requests*. **Updates:** Assistant's own update needs the person's OK and can't write to
+  Program Files, so a weekly SYSTEM task `\deskside\help-refresh` (`Update-HelpButton.ps1`) downloads it again from the
+  server and swaps the file when it changed; diagnose reports `help.refresh-failing` after 3 weeks without a good
+  refresh, and the sweep alerts on it. The server is its source; the server's own update job keeps the server current.
 - **The device id**: `Install-MeshAgent.ps1` records the agent's MeshCentral node id (`MeshAgent.exe -nodeid`, turned
   into `node//...`) in its run record; the helper copies it into `devices.json` when enrolling (the `enroll` skill).
+- **The helper's SSH key** is `deskside-ssh` in 1Password (its private half never leaves it). 1Password's agent offers
+  every key it holds and an OpenSSH server refuses after `MaxAuthTries` (6), so the console writes the public key
+  (`sshPublicKeyRef`) to `%LOCALAPPDATA%\deskside\deskside-ssh.pub` and passes it with `IdentitiesOnly=yes`
+  (1Password's documented fix); the agent then signs with that key only and 1Password asks to approve it.
 - **The login** for MeshCmd and for removing devices is a MeshCentral login token kept in a password manager and read
   by reference (`meshcentral.json` in the private records store); nothing about the server lives in this repo.
-- **Removal**: `scripts/remote/Remove-RemoteHelp.ps1` (the person can run it from the desktop shortcut) uninstalls the
-  agent, the SSH setup and the key, and checks nothing is left. Uninstalling an agent doesn't delete the device on the
+- **Removal**: `scripts/remote/Remove-RemoteHelp.ps1` (the person can run it from the desktop shortcut) removes the
+  help button (its program, shortcuts, refresh task and each profile's Assistant setting, loading an unloaded profile's
+  hive for a moment), uninstalls the agent, the SSH setup and the key, and checks nothing is left. Uninstalling an agent doesn't delete the device on the
   server, so the helper also runs `scripts/console/Remove-DesksideDevice.ps1`. A relay-only console login can't delete
   devices: by default the script prints the web page's steps (*Actions > Delete Device*) and `-RemovedInWebUi` then marks
   the device removed; with `meshctrl` and a `removeLogin` allowed to delete devices set, it removes it itself.
@@ -53,7 +85,8 @@ A separate private repo (default `~\Projects\deskside-records`, override with `D
 ```
 devices.json          [{ alias, meshNodeId, sshUser, profile, consent: { diagnose, onboard, remote } }]
 meshcentral.json      { serverUrl, relayUrl, groupRef, proofGroupRef, serverId | serverHttpsHash, meshctrl,
-                        login: { userRef, passwordRef }, removeLogin }   (refs are 1Password op:// references)
+                        login: { userRef, passwordRef }, removeLogin,
+                        helperName, sshPublicKeyRef }   (refs are 1Password op:// references)
 devices/<alias>/runs  run folders pulled back from the PC (records, summaries, transcripts)
 devices/<alias>/health  the health sweep's records
 ```

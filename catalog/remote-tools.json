@@ -1,6 +1,6 @@
 {
   "schema": "deskside.remote-tools/v1",
-  "note": "Remote-access tools that scammers ask people to install. Finding one is reported as 'fix now' unless the person knows who installed it and why. MeshCentral's own agent is expected on enrolled PCs and is reported as Info.",
+  "note": "Remote-access tools that scammers ask people to install. Finding one is reported as 'fix now' unless the person knows who installed it and why. MeshCentral's own agent, and MeshCentral Assistant (deskside's help button, which has no installer entry), are expected on enrolled PCs and are reported as Info.",
   "items": [
     { "pattern": "TeamViewer", "name": "TeamViewer" },
     { "pattern": "AnyDesk", "name": "AnyDesk" },
@@ -19,6 +19,6 @@
     { "pattern": "TightVNC|UltraVNC|RealVNC|TigerVNC", "name": "VNC" }
   ],
   "expected": [
-    { "pattern": "^Mesh Agent$|MeshCentral", "name": "MeshCentral agent (deskside remote help)" }
+    { "pattern": "^Mesh Agent$|MeshCentral", "name": "MeshCentral agent and Assistant (deskside remote help)" }
   ]
 }

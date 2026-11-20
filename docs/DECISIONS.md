@@ -72,3 +72,34 @@ side (schedule, secrets, monitor) is set up by the homelab's own stack repo.
 Copied from Microsoft's Windows 11 Home and Pro lifecycle page and the Windows 10 ESU page on 2026-11-19 into
 `catalog/lifecycle.json` (`readOn`). Consequence: the check reports its own table as possibly out of date after 180
 days, so stale dates can't silently mislead.
+
+## D-011 (2026-11-20) — One-click help is MeshCentral Assistant, monitor-only, refreshed by deskside
+
+[Colton's choice, 2026-11-20] "Write a deskside follow-up" (one-click Request Help, a notice over SSH). Assistant has
+no release of its own and no installer; its binary ships inside MeshCentral (agent id 10006), Apache-2.0, Intel. Only
+the server's *System tray, monitor only* download (`ac=4`, read in MeshCentral 1.3.1's `webserver.js`) carries no
+server settings and attaches to the installed agent; any other kind runs its own agent with its own, unpatched relay
+code. [Claude's call] Its own update asks the person and can't write to Program Files, so it runs with `-noupdate` and
+a weekly SYSTEM task re-downloads it from the server (the server is its source; the stack's update job keeps the server
+current). Consequence: `Install-HelpButton.ps1`, `Ask-ForHelp.ps1`, `Update-HelpButton.ps1`; diagnose's
+`help.refresh-failing` and the sweep's `help-button-stale`; removal takes every piece, each profile's setting included.
+
+## D-012 (2026-11-20) — A message on the PC's screen whenever the helper works over SSH
+
+MeshCentral's port map shows nothing on the PC. [Claude's call] `WTSSendMessage` (wtsapi32, every Windows edition,
+callable from Windows PowerShell 5.1; `msg.exe` is the same call but documented for no edition) from the elevated
+session-0 SSH login reaches every signed-in session; the Sandbox spike showed sshd sets `SSH_CONNECTION` and a SYSTEM
+task sees none. Windows queues a session's messages (a second box waited for the first to close, measured on the
+T14 2026-11-20), so both close themselves after 5 minutes and the End message follows the Start one. The console sends
+Start before a run or shell and End after; the PC enforces it too, since
+`New-DesksideRun` sends Start itself for an SSH run the console didn't announce and records `data.notice`. The
+consent wording promises only that: nothing appears when nobody is signed in (the record says so), a dropped link can
+lose the End message, and the scheduled check (SYSTEM, run-command) shows nothing. Consequence: `Send-HelperNotice.ps1`,
+the console's `Send-RemoteNotice`; the helper's name is `helperName` in the private store, never this repo.
+
+## D-013 (2026-11-20) — The console names its key: deskside-ssh with IdentitiesOnly
+
+1Password's agent holds eleven keys here and an OpenSSH server stops after `MaxAuthTries` 6. The console writes the
+`deskside-ssh` public key (`sshPublicKeyRef` in the private store) to `%LOCALAPPDATA%\deskside\deskside-ssh.pub` and
+passes it with `IdentitiesOnly=yes`, 1Password's documented way to pick a key. The Sandbox proof's throwaway key path
+(`DESKSIDE_SSH_IDENTITY`) stays, and one host step uses the real key.

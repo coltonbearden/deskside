@@ -1,6 +1,6 @@
 ---
 name: enroll
-description: Enroll a family member's PC for remote help - MeshCentral agent, loopback-only SSH with the helper's key, and its entry in devices.json - after its owner agrees. Use when the helper sets up remote access on a new PC, usually in person or over Quick Assist.
+description: Enroll a family member's PC for remote help - MeshCentral agent, the "Ask for help" button, loopback-only SSH with the helper's key, and its entry in devices.json - after its owner agrees. Use when the helper sets up remote access on a new PC, usually in person or over Quick Assist.
 argument-hint: "[alias]"
 disable-model-invocation: true
 ---
@@ -16,10 +16,15 @@ nothing can reach it yet. Walk him through it; he types the commands on the PC.
    `...\scripts\remote\Install-MeshAgent.ps1 -ServerUrl <url> -GroupId <group id>`
    The run prints only counts; its record (`C:\ProgramData\deskside\data\runs\*-mesh-install\record.json`, `data.meshNodeId`)
    holds the device's node id. He reads it there on the PC, or from the device's page in MeshCentral.
-4. Turn on loopback SSH with his public key (from 1Password item `deskside-ssh`, public key field):
+4. Add the help button (`helperName` from `meshcentral.json`; the server and group come from the agent):
+   `...\scripts\remote\Install-HelpButton.ps1 -HelperName '<helperName>'`
+5. Turn on loopback SSH with his public key (`op read` of `sshPublicKeyRef` in `meshcentral.json`, the `deskside-ssh`
+   item's public key):
    `...\scripts\remote\Enable-LoopbackSsh.ps1 -PublicKey '<ssh-ed25519 ...>'`
-5. On his machine: add the device to `devices.json` (alias, meshNodeId,
+6. On his machine: add the device to `devices.json` (alias, meshNodeId,
    sshUser = the PC account used, profile, consent dates for each scope the owner agreed to), commit the records repo.
-6. Prove it: run the `connect` skill for the alias. Then show the owner the "Remove remote help" shortcut on their
-   desktop. Tell them plainly: a notice and privacy bar appear when he views the screen, a terminal or files; checks run
-   over the SSH route show nothing on screen, but each run is recorded on the PC.
+7. Prove it: run the `connect` skill for the alias. Then show the owner, on their desktop, "Ask <helperName> for help"
+   (one click sends him a request; his server emails it) and "Remove remote help". Tell them plainly: when he views the
+   screen, a terminal or files they see MeshCentral's notice and bar; when he connects to run checks or fixes a message
+   says so and another says when he's finished (after they close the first, or 5 minutes); if nobody is signed in nothing appears but the visit is recorded; the
+   automatic check every 6 hours only reads and shows nothing.

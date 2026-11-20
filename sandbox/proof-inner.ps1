@@ -22,6 +22,8 @@ $out = 'C:\out'
 $cfg = Get-Content 'C:\in\proof-config.json' -Raw | ConvertFrom-Json
 $app = 'C:\ProgramData\deskside\app'
 $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$helper = 'Proof helper'
+$sessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId
 
 function Write-Step([string]$Name, [bool]$Ok, [string]$Detail) {
     $d = ($Detail -replace '\s+', ' ').Trim()
@@ -161,6 +163,8 @@ Invoke-Step 'power-profile' {
 Invoke-Step 'consent-remote' { & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'scripts\onboard\Grant-Consent.ps1') -Scope remote -Confirmed }
 Invoke-Step 'loopback-ssh' {
     & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'scripts\remote\Enable-LoopbackSsh.ps1') -PublicKey $cfg.publicKey 2>&1 | Out-Null
+    # The helper's real deskside-ssh public key beside the throwaway one, for the host's real-key login.
+    if ($cfg.PSObject.Properties['realPublicKey'] -and $cfg.realPublicKey) { Add-Content -LiteralPath 'C:\ProgramData\ssh\administrators_authorized_keys' -Value $cfg.realPublicKey -Encoding ascii }
     $listen = @(Get-NetTCPConnection -State Listen -LocalPort 22 -ErrorAction SilentlyContinue | ForEach-Object { $_.LocalAddress } | Sort-Object -Unique)
     Assert-That ($listen.Count -gt 0 -and @($listen | Where-Object { $_ -ne '127.0.0.1' }).Count -eq 0) ("listening on: " + ($listen -join ','))
     $state = Get-Content 'C:\ProgramData\deskside\data\ssh-state.json' -Raw | ConvertFrom-Json
@@ -199,11 +203,101 @@ if ($cfg.serverUrl -and $cfg.groupId) {
         Set-Content -LiteralPath "$out\nodeid.txt" -Value $nodeId -Encoding ascii
         'agent running; node id handed to the host'
     }
+    Invoke-Step 'help-button' {
+        $before = @(Get-Process -Name MeshCentralAssistant -ErrorAction SilentlyContinue).Count
+        & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'scripts\remote\Install-HelpButton.ps1') -HelperName $helper | Out-Null
+        $hb = Get-HelpButtonPath -HelperName $helper
+        $rec = Get-ChildItem 'C:\ProgramData\deskside\data\runs' -Directory | Where-Object Name -like '*-help-install' | Select-Object -Last 1
+        $data = (Get-Content (Join-Path $rec.FullName 'record.json') -Raw | ConvertFrom-Json).data
+        foreach ($f in $hb.Exe, $hb.Startup, $hb.Desktop, $hb.StartMenu) { Assert-That (Test-Path -LiteralPath $f) "missing $(Split-Path $f -Leaf)" }
+        Assert-That ([bool](Get-ScheduledTask -TaskPath $hb.TaskPath -TaskName $hb.TaskName -ErrorAction SilentlyContinue)) 'no refresh task'
+        Start-Sleep -Seconds 15
+        $mine = @(Get-Process -Name MeshCentralAssistant -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $sessionId })
+        Assert-That ($mine.Count -ge 1) 'Assistant is not running in the signed-in session'
+        $titles = @(Get-Process -Name MeshCentralAssistant | Where-Object { $_.MainWindowTitle } | ForEach-Object { $_.MainWindowTitle })
+        # The refresh task, as SYSTEM, the way it runs each week.
+        Start-ScheduledTask -TaskPath $hb.TaskPath -TaskName $hb.TaskName; Start-Sleep -Seconds 20
+        $state = Get-Content $hb.StateFile -Raw | ConvertFrom-Json
+        Assert-That ($state.result -eq 'current') "refresh: $($state.result)"
+        "installed ($($data.assistant.result), signature $($data.assistant.signature), sha256 $($data.assistant.sha256.Substring(0,12))); running in session $sessionId (before $before); windows open: $($titles.Count) ($($titles -join '|')); weekly refresh as SYSTEM: $($state.result)"
+    }
+    Invoke-Step 'help-request' {
+        $log = Join-Path $out 'assistant'
+        New-Item -ItemType Directory -Force -Path $log | Out-Null
+        $stamp = (Get-Date).ToString('HH:mm')
+        $o = & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'scripts\remote\Ask-ForHelp.ps1') -HelperName $helper -Text "deskside Sandbox proof $stamp`r`nsecond line" -LogFolder $log -Quiet 2>&1 | Out-String
+        Assert-That ($o -match 'on its way') "button said: $o"
+        $deadline = (Get-Date).AddSeconds(60); $sent = $false
+        while (-not $sent -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 3; $sent = [bool](Select-String -LiteralPath (Join-Path $log 'debug.log') -Pattern 'requesthelp' -Quiet -ErrorAction SilentlyContinue) }
+        Assert-That $sent 'Assistant logged no requesthelp to the agent'
+        Set-Content -LiteralPath "$out\help-requested.txt" -Value $stamp
+        "request sent at $stamp (one line, ""deskside Sandbox proof $stamp second line""); Assistant's log shows requesthelp to the agent"
+    }
     # The host side now runs its checks (port map, SSH, Claude Code). It writes C:\out\host-done when finished.
+    # Meanwhile every message box titled 'deskside - ' in this session is written down, with the time it appeared.
+    $watch = Start-Job -ScriptBlock {
+        $out = $using:out
+        Add-Type -Namespace Proof -Name W -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr p);
+public delegate bool EnumProc(IntPtr h, IntPtr p);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
+[DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+'@
+        $seen = @{}
+        while (-not (Test-Path "$out\watch-stop")) {
+            $cb = [Proof.W+EnumProc] {
+                param($h, $p)
+                $null = $p
+                $sb = New-Object Text.StringBuilder 256
+                [void][Proof.W]::GetWindowText($h, $sb, 256)
+                $t = $sb.ToString()
+                if ($t -like 'deskside - *' -and [Proof.W]::IsWindowVisible($h) -and -not $seen.ContainsKey("$h")) {
+                    $seen["$h"] = $true
+                    ('{0} {1}' -f (Get-Date).ToString('HH:mm:ss'), $t) | Add-Content "$out\notice-windows.txt"
+                }
+                $true
+            }
+            [void][Proof.W]::EnumWindows($cb, [IntPtr]::Zero)
+            Start-Sleep -Milliseconds 700
+        }
+    }
     Write-Step 'waiting-for-host' $true 'agent online; waiting for the host-side checks'
     $deadline = (Get-Date).AddMinutes(30)
     while (-not (Test-Path "$out\host-done") -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 5 }
     Write-Step 'host-done' (Test-Path "$out\host-done") 'host finished or timed out'
+    Invoke-Step 'notice-seen' {
+        # Windows shows a session's messages one at a time: the closing one waits until the first is closed. Nobody
+        # closes it here, so the first closes itself after 5 minutes, and then the closing one must appear.
+        $w = @(Get-Content "$out\notice-windows.txt" -ErrorAction SilentlyContinue)
+        $first = @($w | Where-Object { $_ -like '* is connected' }) | Select-Object -First 1
+        Assert-That ([bool]$first) 'no "is connected" message appeared'
+        $n = Get-Content 'C:\ProgramData\deskside\data\notice.json' -Raw | ConvertFrom-Json
+        Assert-That ($n.phase -eq 'End') "notice.json says $($n.phase): the closing message was not sent"
+        $deadline = (Get-Date).AddMinutes(7)
+        do { Start-Sleep -Seconds 5; $w = @(Get-Content "$out\notice-windows.txt" -ErrorAction SilentlyContinue) } while (@($w | Where-Object { $_ -like '* has finished' }).Count -eq 0 -and (Get-Date) -lt $deadline)
+        Assert-That (@($w | Where-Object { $_ -like '* has finished' }).Count -ge 1) 'no "has finished" message appeared within 7 minutes of the run'
+        "notice.json: End sent (signedIn $($n.signedIn), shown $($n.shown)); $($w.Count) message(s) in session ${sessionId}, the closing one after the first closed itself: " + ($w -join '; ')
+    }
+    Invoke-Step 'sweep-silent' {
+        # The scheduled check runs the installed diagnostics as SYSTEM through MeshCentral's run-command; this runs
+        # them the same way, as SYSTEM with no SSH, and no message may appear.
+        $n0 = @(Get-Content "$out\notice-windows.txt" -ErrorAction SilentlyContinue).Count
+        $t = 'deskside-proof-sweep'
+        $a = New-ScheduledTaskAction -Execute $ps -Argument ("-NoProfile -ExecutionPolicy Bypass -File " + (Join-Path $app 'scripts\diagnose\Invoke-Diagnose.ps1') + ' -Quick')
+        Register-ScheduledTask -TaskName $t -Action $a -User 'SYSTEM' -RunLevel Highest -Force | Out-Null
+        Start-ScheduledTask -TaskName $t
+        $deadline = (Get-Date).AddMinutes(5)
+        do { Start-Sleep -Seconds 5 } while ((Get-ScheduledTask -TaskName $t).State -eq 'Running' -and (Get-Date) -lt $deadline)
+        Start-Sleep -Seconds 5
+        Unregister-ScheduledTask -TaskName $t -Confirm:$false
+        $n1 = @(Get-Content "$out\notice-windows.txt" -ErrorAction SilentlyContinue).Count
+        $rec = Get-ChildItem 'C:\ProgramData\deskside\data\runs' -Directory | Where-Object Name -like '*-diagnose' | Sort-Object Name | Select-Object -Last 1
+        $r = Get-Content (Join-Path $rec.FullName 'record.json') -Raw | ConvertFrom-Json
+        Assert-That ($r.data.PSObject.Properties.Name -notcontains 'notice') 'the SYSTEM run recorded a notice'
+        Assert-That ($n1 -eq $n0) "$($n1 - $n0) message(s) appeared during the SYSTEM run"
+        "diagnose as SYSTEM: no message, no notice in its record"
+    }
+    'stop' | Set-Content "$out\watch-stop"; $null = $watch | Wait-Job -Timeout 10; $watch | Remove-Job -Force
 } else {
     Write-Step 'mesh-agent' $true 'skipped: no MeshCentral server given'
 }
@@ -217,6 +311,12 @@ Invoke-Step 'remove-remote-help' {
     if (Get-Service sshd -ErrorAction SilentlyContinue) { $left += 'sshd service' }
     if (Test-Path 'C:\ProgramData\ssh\administrators_authorized_keys') { $left += 'key file' }
     if (Test-Path (Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Remove remote help.cmd')) { $left += 'shortcut' }
+    $hb = Get-HelpButtonPath -HelperName $helper
+    if (Test-Path $hb.Folder) { $left += 'help button folder' }
+    foreach ($l in $hb.Startup, $hb.Desktop, $hb.StartMenu) { if (Test-Path -LiteralPath $l) { $left += (Split-Path $l -Leaf) } }
+    if (Get-ScheduledTask -TaskPath $hb.TaskPath -ErrorAction SilentlyContinue) { $left += 'help button task' }
+    if (Get-Process -Name $hb.ProcessName -ErrorAction SilentlyContinue) { $left += 'help button running' }
+    if (Test-Path 'HKCU:\SOFTWARE\Open Source\MeshCentral Assistant') { $left += 'help button setting' }
     $c = Get-Content 'C:\ProgramData\deskside\data\consent.json' -Raw | ConvertFrom-Json
     if ($c.scopes.PSObject.Properties['remote']) { $left += 'remote consent' }
     Assert-That ($left.Count -eq 0) ("left behind: " + ($left -join ', '))

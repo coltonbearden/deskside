@@ -150,7 +150,7 @@ function Get-ConsentText {
     switch ($Scope) {
         'diagnose' { 'Read this PC''s settings, health and installed apps, and write a report. Nothing is changed.' }
         'onboard' { 'Install the apps and apply the settings on the list you agree to. Each change is recorded and can be undone.' }
-        'remote' { 'Install the MeshCentral agent so your helper can connect to this PC when you need help, and turn on a sign-in for him that only works through that agent. If he views your screen, a terminal or your files, you will see a notice. When he only runs checks and fixes in the background, nothing appears on screen, but every run is recorded on this PC. You can remove it any time with "Remove remote help" on the desktop.' }
+        'remote' { 'Install the MeshCentral agent so your helper can connect to this PC when you need help, turn on a sign-in for him that only works through that agent, and add an "Ask for help" button that sends him your request. If he views your screen, a terminal or your files, you will see a notice and a bar at the top of the screen. When he connects to run checks or fixes, a message appears on your screen saying so and what he is doing, and another when he finishes. If no one is signed in, nothing appears, but the visit is recorded on this PC. The closing message shows once the first is closed (each closes itself after 5 minutes), and may not appear if the connection drops. The automatic check every 6 hours only reads and shows nothing. You can remove all of it any time with "Remove remote help" on the desktop.' }
     }
 }
 
@@ -235,6 +235,193 @@ function Initialize-DataRoot {
     return $root
 }
 
+$script:WtsSource = @'
+using System;
+using System.Runtime.InteropServices;
+namespace Deskside {
+    public static class Wts {
+        [StructLayout(LayoutKind.Sequential)]
+        public struct SessionInfo { public int SessionId; public IntPtr WinStationName; public int State; }
+        [DllImport("wtsapi32.dll", SetLastError = true)]
+        public static extern bool WTSEnumerateSessions(IntPtr server, int reserved, int version, out IntPtr info, out int count);
+        [DllImport("wtsapi32.dll")]
+        public static extern void WTSFreeMemory(IntPtr memory);
+        [DllImport("wtsapi32.dll", SetLastError = true)]
+        public static extern bool WTSQuerySessionInformation(IntPtr server, int session, int infoClass, out IntPtr buffer, out int bytes);
+        [DllImport("wtsapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        public static extern bool WTSSendMessage(IntPtr server, int session, string title, int titleBytes, string message, int messageBytes, int style, int timeout, out int response, bool wait);
+    }
+}
+'@
+
+function Initialize-WtsType {
+    [CmdletBinding()]
+    param()
+    if (-not ('Deskside.Wts' -as [type])) { Add-Type -TypeDefinition $script:WtsSource }
+}
+
+function Get-SignedInSession {
+    <#
+    .SYNOPSIS
+        The ids of the Windows sessions where someone is signed in and active (the console or a remote desktop).
+    .DESCRIPTION
+        WTSEnumerateSessions and WTSQuerySessionInformation (WTSUserName), from wtsapi32 on every Windows edition.
+        Returns session ids only; the user names are read to tell a signed-in session from an empty one and dropped.
+    #>
+    [CmdletBinding()]
+    [OutputType([int[]])]
+    param()
+    Initialize-WtsType
+    $ptr = [IntPtr]::Zero; $count = 0
+    $ids = @()
+    if (-not [Deskside.Wts]::WTSEnumerateSessions([IntPtr]::Zero, 0, 1, [ref]$ptr, [ref]$count)) { return }
+    try {
+        $size = [Runtime.InteropServices.Marshal]::SizeOf([type][Deskside.Wts+SessionInfo])
+        for ($i = 0; $i -lt $count; $i++) {
+            $si = [Runtime.InteropServices.Marshal]::PtrToStructure([IntPtr]($ptr.ToInt64() + $i * $size), [type][Deskside.Wts+SessionInfo])
+            if ($si.State -ne 0) { continue }   # WTSActive only
+            $buf = [IntPtr]::Zero; $bytes = 0
+            $hasUser = $false
+            if ([Deskside.Wts]::WTSQuerySessionInformation([IntPtr]::Zero, $si.SessionId, 5, [ref]$buf, [ref]$bytes)) {
+                $hasUser = [bool][Runtime.InteropServices.Marshal]::PtrToStringUni($buf)
+                [Deskside.Wts]::WTSFreeMemory($buf)
+            }
+            if ($hasUser) { $ids += $si.SessionId }
+        }
+    } finally { [Deskside.Wts]::WTSFreeMemory($ptr) }
+    return $ids
+}
+
+function Send-SessionNotice {
+    <#
+    .SYNOPSIS
+        Shows a message box in every signed-in session (WTSSendMessage), without waiting for anyone to answer.
+    .OUTPUTS
+        signedIn (how many sessions had someone signed in) and shown (how many took the message).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Title,
+        [Parameter(Mandatory)][string]$Text,
+        [int]$TimeoutSeconds = 300
+    )
+    Initialize-WtsType
+    $sessions = @(Get-SignedInSession)
+    $shown = 0
+    foreach ($s in $sessions) {
+        $resp = 0
+        # MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST
+        $style = 0x00000040 -bor 0x00010000 -bor 0x00040000
+        if ([Deskside.Wts]::WTSSendMessage([IntPtr]::Zero, $s, $Title, $Title.Length * 2, $Text, $Text.Length * 2, $style, $TimeoutSeconds, [ref]$resp, $false)) { $shown++ }
+    }
+    return [pscustomobject]@{ signedIn = $sessions.Count; shown = $shown }
+}
+
+function Get-HelperNoticeText {
+    <# The words the person at the PC sees when the helper connects over SSH and when he leaves. #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateSet('Start', 'End')][string]$Phase,
+        [ValidateSet('diagnose', 'onboard', 'settings', 'undo', 'remote', 'shell', 'task')][string]$Activity = 'task',
+        [string]$HelperName = 'Your helper'
+    )
+    if ($Phase -eq 'End') {
+        return [pscustomobject]@{ Title = "deskside - $HelperName has finished"; Text = "$HelperName has finished and is no longer connected to this PC." }
+    }
+    $what = switch ($Activity) {
+        'diagnose' { 'to run a health check. It only reads settings and changes nothing.' }
+        'onboard' { 'to install the apps and settings you agreed to. Every change is recorded and can be undone.' }
+        'settings' { 'to apply the settings you agreed to. Every change is recorded and can be undone.' }
+        'undo' { 'to undo an earlier change.' }
+        'remote' { 'to update or remove remote help on this PC.' }
+        'shell' { 'to work on this PC from his computer, using a command line.' }
+        default { 'to run a deskside task.' }
+    }
+    return [pscustomobject]@{
+        Title = "deskside - $HelperName is connected"
+        Text  = "$HelperName is connected to this PC from his computer $what You don't need to do anything; you can close this message. Another one will say when he has finished."
+    }
+}
+
+function Get-NoticePath {
+    [CmdletBinding()]
+    param()
+    return (Join-Path (Get-DesksideDataRoot) 'notice.json')
+}
+
+function Send-HelperNotice {
+    <#
+    .SYNOPSIS
+        Tells whoever is signed in that the helper has connected (Start) or finished (End), and records it.
+    .DESCRIPTION
+        Writes notice.json beside the data (phase, time, counts; no names). Windows shows a session's messages one at a
+        time, so a second waits until the first is closed; each closes itself after 5 minutes, so the End message waits
+        at most that long and an empty PC never collects a queue.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateSet('Start', 'End')][string]$Phase,
+        [string]$Activity = 'task',
+        [string]$HelperName = 'Your helper',
+        [string]$SentBy = 'console'
+    )
+    $t = Get-HelperNoticeText -Phase $Phase -Activity $Activity -HelperName $HelperName
+    $timeout = 300
+    $r = Send-SessionNotice -Title $t.Title -Text $t.Text -TimeoutSeconds $timeout
+    $rec = [ordered]@{ schema = 'deskside.notice/v1'; phase = $Phase; activity = $Activity; sentBy = $SentBy; sentUtc = (Get-Date).ToUniversalTime().ToString('o'); signedIn = $r.signedIn; shown = $r.shown }
+    Initialize-DataRoot | Out-Null
+    ($rec | ConvertTo-Json) | Set-Content -LiteralPath (Get-NoticePath) -Encoding UTF8 -WhatIf:$false
+    return [pscustomobject]$rec
+}
+
+function Test-DesksideSshRun {
+    <# True when this process runs under the helper's SSH sign-in (sshd's SSH_CONNECTION, or the console's marker). #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param()
+    return ([bool]$env:SSH_CONNECTION -or $env:DESKSIDE_VIA -eq 'ssh')
+}
+
+function ConvertTo-NoticeActivity {
+    <# Maps a run kind or a script path to the notice's activity word. #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Name)
+    switch -Regex ($Name) {
+        'diagnose' { return 'diagnose' }
+        'undo' { return 'undo' }
+        'settings|baseline' { return 'settings' }
+        'onboard|install|apps|profile|winget|consent|changelist' { return 'onboard' }
+        'remote|mesh|ssh|help' { return 'remote' }
+    }
+    return 'task'
+}
+
+function Get-RunNotice {
+    <#
+    .SYNOPSIS
+        For a run over the helper's SSH sign-in: the Start notice the console sent in the last 10 minutes, or one sent
+        now. Returns $null for every other run (the scheduled check, a person at the PC).
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Kind)
+    if (-not (Test-DesksideSshRun)) { return $null }
+    $path = Get-NoticePath
+    if (Test-Path -LiteralPath $path) {
+        try {
+            $n = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+            $age = (Get-Date).ToUniversalTime() - ([datetime]::Parse($n.sentUtc)).ToUniversalTime()
+            if ($n.phase -eq 'Start' -and $age.TotalMinutes -lt 10) { return $n }
+        } catch { Write-Verbose "notice.json unreadable: $($_.Exception.Message)" }
+    }
+    if ($env:DESKSIDE_NOTICE_SENT) { return $null }
+    $env:DESKSIDE_NOTICE_SENT = '1'
+    $helper = 'Your helper'
+    if ($env:DESKSIDE_HELPER) { $helper = $env:DESKSIDE_HELPER }
+    $sent = Send-HelperNotice -Phase Start -Activity (ConvertTo-NoticeActivity -Name $Kind) -HelperName $helper -SentBy 'run'
+    $sent | Add-Member -NotePropertyName sentNow -NotePropertyValue $true
+    return $sent
+}
+
 function New-DesksideRun {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Only creates the run''s own record folder and transcript.')]
     <#
@@ -258,7 +445,7 @@ function New-DesksideRun {
         $transcript = Join-Path $folder 'transcript.txt'
         try { Start-Transcript -LiteralPath $transcript -Force -WhatIf:$false | Out-Null } catch { $transcript = $null }
     }
-    return [pscustomobject]@{
+    $run = [pscustomobject]@{
         Id         = $id
         Kind       = $Kind
         Folder     = $folder
@@ -268,7 +455,21 @@ function New-DesksideRun {
         Changes    = New-Object System.Collections.Generic.List[object]
         Errors     = New-Object System.Collections.Generic.List[object]
         Data       = [ordered]@{}
+        NoticeSent = $false
     }
+    # A run over the helper's SSH sign-in tells the person at the PC; the scheduled check and local runs don't.
+    if (Test-DesksideSshRun) {
+        $n = $null
+        try { $n = Get-RunNotice -Kind $Kind } catch { $run.Errors.Add([pscustomobject]@{ section = 'notice'; message = $_.Exception.Message }) }
+        if ($n) {
+            $run.Data['notice'] = [ordered]@{ sentBy = $n.sentBy; signedIn = $n.signedIn; shown = $n.shown }
+            $run.NoticeSent = [bool]($n.PSObject.Properties['sentNow'] -and $n.sentNow)
+            if ([int]$n.signedIn -eq 0) { Add-Finding -Run $run -Id 'notice.nobody' -Rank 'Info' -Text 'No one was signed in at the PC to see the notice that the helper was connected.' }
+        } else {
+            $run.Data['notice'] = [ordered]@{ sentBy = 'none'; signedIn = $null; shown = $null }
+        }
+    }
+    return $run
 }
 
 function Add-Finding {
@@ -371,6 +572,11 @@ function Complete-DesksideRun {
     $mdPath = Join-Path $Run.Folder 'summary.md'
     $md.ToString() | Set-Content -LiteralPath $mdPath -Encoding UTF8 -WhatIf:$false
     if ($Run.Transcript) { try { Stop-Transcript | Out-Null } catch { Write-Verbose 'No transcript to stop.' } }
+    if ($Run.PSObject.Properties['NoticeSent'] -and $Run.NoticeSent) {
+        $helper = 'Your helper'
+        if ($env:DESKSIDE_HELPER) { $helper = $env:DESKSIDE_HELPER }
+        try { Send-HelperNotice -Phase End -Activity (ConvertTo-NoticeActivity -Name $Run.Kind) -HelperName $helper -SentBy 'run' | Out-Null } catch { Write-Verbose "End notice not sent: $($_.Exception.Message)" }
+    }
     Write-SafeSummary -Counts $counts -Changes $Run.Changes.Count -Errors $Run.Errors.Count -Folder $Run.Folder
     return [pscustomobject]@{ Record = $json; Summary = $mdPath; Counts = $counts }
 }
@@ -527,6 +733,88 @@ function Get-MeshNodeId {
     $out = (& $AgentPath -nodeid 2>$null | Out-String).Trim()
     if ($out -match '^[0-9A-Fa-f]{96}$') { return ConvertTo-MeshNodeId -Hex $out }
     return $null
+}
+
+function Get-MeshAgentSetting {
+    <#
+    .SYNOPSIS
+        The server address and device group of the installed agent, from its own MeshAgent.msh (no copy is kept).
+    .OUTPUTS
+        ServerUrl (https://host:port) and GroupId (the group's id as the server's download links take it), or $null.
+    #>
+    [CmdletBinding()]
+    param([string]$MshPath = (Join-Path $env:ProgramFiles 'Mesh Agent\MeshAgent.msh'))
+    if (-not (Test-Path -LiteralPath $MshPath)) { return $null }
+    $server = $null; $meshHex = $null
+    foreach ($line in Get-Content -LiteralPath $MshPath) {
+        if ($line -match '^MeshServer=wss://([^/]+)/') { $server = 'https://' + $Matches[1] }
+        elseif ($line -match '^MeshID=0x([0-9A-Fa-f]{96})\s*$') { $meshHex = $Matches[1] }
+    }
+    if (-not $server -or -not $meshHex) { return $null }
+    $bytes = New-Object byte[] 48
+    for ($i = 0; $i -lt 48; $i++) { $bytes[$i] = [Convert]::ToByte($meshHex.Substring($i * 2, 2), 16) }
+    $group = [Convert]::ToBase64String($bytes).Replace('/', '$').Replace('+', '@')
+    return [pscustomobject]@{ ServerUrl = $server; GroupId = $group }
+}
+
+function Get-HelpButtonPath {
+    <# Where the help button lives: the program, its shortcuts and its refresh task. #>
+    [CmdletBinding()]
+    param([string]$HelperName = 'your helper')
+    $folder = Join-Path $env:ProgramFiles 'deskside\Help'
+    $programs = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'
+    $label = "Ask $HelperName for help.lnk"
+    return [pscustomobject]@{
+        Folder      = $folder
+        Exe         = Join-Path $folder 'MeshCentralAssistant.exe'
+        Startup     = Join-Path $programs 'StartUp\deskside help button.lnk'
+        Desktop     = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) $label
+        StartMenu   = Join-Path $programs $label
+        TaskPath    = '\deskside\'
+        TaskName    = 'help-refresh'
+        StateFile   = Join-Path (Get-DesksideDataRoot) 'help-refresh.json'
+        ProcessName = 'MeshCentralAssistant'
+    }
+}
+
+function Save-HelpButtonFile {
+    <#
+    .SYNOPSIS
+        Downloads MeshCentral Assistant from the helper's own server in its monitor-only form and puts it in place
+        when it differs from the copy there.
+    .DESCRIPTION
+        /meshagents?id=10006&meshid=<group>&ac=4 is MeshCentral's "system tray, monitor only" Assistant: it carries no
+        server details and attaches to the installed agent, so the agent's (patched) relay code stays the only one.
+        A running copy keeps running from the renamed old file; the old file goes on the next refresh.
+    .OUTPUTS
+        result (installed, updated, current), sha256, signature.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param([Parameter(Mandatory)][ValidatePattern('^https://')][string]$ServerUrl, [Parameter(Mandatory)][string]$GroupId)
+    $p = Get-HelpButtonPath
+    Get-ChildItem -LiteralPath $p.Folder -Filter '*.old' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $ProgressPreference = 'SilentlyContinue'
+    $tmp = Join-Path $env:TEMP ('deskside-help-' + [guid]::NewGuid() + '.exe')
+    $url = $ServerUrl.TrimEnd('/') + '/meshagents?id=10006&meshid=' + [uri]::EscapeDataString($GroupId) + '&ac=4'
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
+        $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($tmp))
+        if ($text -notmatch 'AutoConnect=4') { throw 'The server did not send the monitor-only Assistant.' }
+        if ($text.Contains('MeshServer=')) { throw 'The Assistant the server sent carries its own server settings; refusing it.' }
+        $hash = (Get-FileHash -LiteralPath $tmp -Algorithm SHA256).Hash
+        $sig = [string](Get-AuthenticodeSignature -FilePath $tmp).Status
+        $result = 'current'
+        $have = $null
+        if (Test-Path -LiteralPath $p.Exe) { $have = (Get-FileHash -LiteralPath $p.Exe -Algorithm SHA256).Hash }
+        if ($have -ne $hash -and $PSCmdlet.ShouldProcess($p.Exe, 'Put MeshCentral Assistant in place')) {
+            New-Item -ItemType Directory -Force -Path $p.Folder | Out-Null
+            if ($have) { Move-Item -LiteralPath $p.Exe -Destination ($p.Exe + '.' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.old') -Force; $result = 'updated' }
+            else { $result = 'installed' }
+            Move-Item -LiteralPath $tmp -Destination $p.Exe -Force
+        }
+        return [pscustomobject]@{ result = $result; sha256 = $hash; signature = $sig }
+    } finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
 }
 
 function Get-WingetPath {

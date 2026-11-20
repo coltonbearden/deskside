@@ -15,5 +15,8 @@ Connect to the PC with alias `$ARGUMENTS`.
 3. For an interactive session the helper types into, tell him to run
    `pwsh -File scripts/console/Invoke-DesksideRemote.ps1 -Alias <alias> -Shell` himself (it needs his terminal).
 
+Both put a message on the PC's screen when the run or shell starts and another when it ends; the script prints how
+many people were signed in to see it (a count only). If the first message can't be sent, nothing runs: say so.
+
 If the port map fails, say whether MeshCentral sees the PC online (the error names it) and stop. 1Password may ask
-him to approve the login and the SSH key: that is expected.
+him to approve the login and the deskside-ssh key: that is expected.

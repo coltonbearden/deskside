@@ -65,7 +65,10 @@ Copy-Item (Join-Path $root 'bootstrap.ps1'), (Join-Path $PSScriptRoot 'proof-inn
 & ssh-keygen.exe -q -t ed25519 -N '' -C 'deskside-sandbox-proof' -f (Join-Path $in 'proof_key') | Out-Null
 if (-not (Test-Path (Join-Path $in 'proof_key.pub'))) { throw 'ssh-keygen did not make the proof key.' }
 $pub = (Get-Content (Join-Path $in 'proof_key.pub') -Raw).Trim()
-[ordered]@{ source = $Source; ref = $Ref; serverUrl = $ServerUrl; groupId = $GroupId; publicKey = $pub } | ConvertTo-Json | Set-Content (Join-Path $in 'proof-config.json')
+# With -Remote the helper's own deskside-ssh public key goes in too, so one host login proves the real key path.
+$realPub = $null
+if ($Remote) { $realPub = (Get-Content -LiteralPath (Get-SshPublicKeyFile -Settings $ms) -Raw).Trim() }
+[ordered]@{ source = $Source; ref = $Ref; serverUrl = $ServerUrl; groupId = $GroupId; publicKey = $pub; realPublicKey = $realPub } | ConvertTo-Json | Set-Content (Join-Path $in 'proof-config.json')
 
 $wsb = @"
 <Configuration>
