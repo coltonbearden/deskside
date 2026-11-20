@@ -94,7 +94,9 @@ T14 2026-11-20), so both close themselves after 5 minutes and the End message fo
 Start before a run or shell and End after; the PC enforces it too, since
 `New-DesksideRun` sends Start itself for an SSH run the console didn't announce and records `data.notice`. The
 consent wording promises only that: nothing appears when nobody is signed in (the record says so), a dropped link can
-lose the End message, and the scheduled check (SYSTEM, run-command) shows nothing. Consequence: `Send-HelperNotice.ps1`,
+lose the End message, and the scheduled check (SYSTEM, run-command) shows nothing. A console run sets
+`DESKSIDE_ANNOUNCED`, so its runs, however long, only stamp the console's Start and never send their own Start or End
+(otherwise a child run of a long onboard could say "has finished" while the helper was still connected). Consequence: `Send-HelperNotice.ps1`,
 the console's `Send-RemoteNotice`; the helper's name is `helperName` in the private store, never this repo.
 
 ## D-013 (2026-11-20) — The console names its key: deskside-ssh with IdentitiesOnly

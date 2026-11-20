@@ -406,12 +406,19 @@ function Get-RunNotice {
     param([Parameter(Mandatory)][string]$Kind)
     if (-not (Test-DesksideSshRun)) { return $null }
     $path = Get-NoticePath
+    $n = $null
     if (Test-Path -LiteralPath $path) {
-        try {
-            $n = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
-            $age = (Get-Date).ToUniversalTime() - ([datetime]::Parse($n.sentUtc)).ToUniversalTime()
-            if ($n.phase -eq 'Start' -and $age.TotalMinutes -lt 10) { return $n }
-        } catch { Write-Verbose "notice.json unreadable: $($_.Exception.Message)" }
+        try { $n = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json } catch { Write-Verbose "notice.json unreadable: $($_.Exception.Message)" }
+    }
+    # The console announced this visit itself (DESKSIDE_ANNOUNCED): stamp its Start whatever its age and never send
+    # another, so a long run's later child runs can't say "has finished" while the helper is still connected.
+    if ($env:DESKSIDE_ANNOUNCED -eq '1') {
+        if ($n -and $n.phase -eq 'Start') { return $n }
+        return $null
+    }
+    if ($n -and $n.phase -eq 'Start') {
+        $age = (Get-Date).ToUniversalTime() - ([datetime]::Parse($n.sentUtc)).ToUniversalTime()
+        if ($age.TotalMinutes -lt 10) { return $n }
     }
     if ($env:DESKSIDE_NOTICE_SENT) { return $null }
     $env:DESKSIDE_NOTICE_SENT = '1'

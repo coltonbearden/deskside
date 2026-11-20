@@ -200,6 +200,20 @@ Describe 'The notice when the helper connects over SSH' {
         $inner.NoticeSent | Should -BeFalse
         Should -Invoke -ModuleName Deskside.Common Send-SessionNotice -Times 1 -Exactly
     }
+    It 'never sends its own notice in a run the console announced, however long ago' {
+        $env:DESKSIDE_VIA = 'ssh'; $env:DESKSIDE_ANNOUNCED = '1'
+        try {
+            Mock -ModuleName Deskside.Common Send-SessionNotice { [pscustomobject]@{ signedIn = 1; shown = 1 } }
+            New-Item -ItemType Directory -Force $env:DESKSIDE_DATA | Out-Null
+            [ordered]@{ schema = 'deskside.notice/v1'; phase = 'Start'; activity = 'onboard'; sentBy = 'console'; sentUtc = (Get-Date).ToUniversalTime().AddMinutes(-11).ToString('o'); signedIn = 1; shown = 1 } |
+                ConvertTo-Json | Set-Content (Join-Path $env:DESKSIDE_DATA 'notice.json')
+            $run = New-DesksideRun -Kind 'apps' -NoTranscript
+            $run.NoticeSent | Should -BeFalse
+            $run.Data['notice'].sentBy | Should -Be 'console'
+            Complete-DesksideRun -Run $run | Out-Null
+            Should -Invoke -ModuleName Deskside.Common Send-SessionNotice -Times 0
+        } finally { Remove-Item Env:\DESKSIDE_ANNOUNCED -ErrorAction SilentlyContinue }
+    }
     It 'finds signed-in sessions through wtsapi32 on this machine' {
         @(Get-SignedInSession).Count | Should -BeGreaterOrEqual 0
     }

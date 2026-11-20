@@ -124,6 +124,7 @@ Describe 'Invoke-DesksideRemote' {
         $text.IndexOf('-Phase Start') | Should -BeLessThan $text.IndexOf('& ssh.exe @ssh $target $remote')
         $text | Should -Match '(?s)finally \{.*-Phase End'
         $text | Should -Match "DESKSIDE_VIA = 'ssh'"
+        $text | Should -Match "DESKSIDE_ANNOUNCED = '1'"
     }
 }
 

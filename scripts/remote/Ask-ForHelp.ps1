@@ -82,5 +82,8 @@ Get-Process -Name 'MeshCentralAssistant' -ErrorAction SilentlyContinue | Where-O
 $argList = @('-noupdate', "`"-help:$clean`"")
 $dir = Split-Path $exe -Parent
 if ($LogFolder) { $argList += '-debug'; $dir = $LogFolder }
-Start-Process -FilePath $exe -ArgumentList $argList -WorkingDirectory $dir | Out-Null
+$proc = Start-Process -FilePath $exe -ArgumentList $argList -WorkingDirectory $dir -PassThru
+# Only one copy runs per PC: if someone else signed in holds it, this one exits at once and its request is lost.
+Start-Sleep -Seconds 4
+if ($proc.HasExited) { Show-Box "The help button is open for someone else signed in to this PC, so your request couldn't be sent. Please phone or text $HelperName." 'Warning'; exit 1 }
 Show-Box "Your request is on its way to $HelperName, who will contact you." 'Information'

@@ -63,7 +63,7 @@ try {
     # bare '& script.ps1', and this changes no policy that outlives the run.
     # DefaultShell is Windows PowerShell (Enable-LoopbackSsh), so the run is marked as the helper's SSH run in its
     # environment as well as by sshd's SSH_CONNECTION.
-    $remote = "`$env:DESKSIDE_VIA = 'ssh'; `$env:DESKSIDE_HELPER = '$helper'; powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\ProgramData\deskside\app\scripts\$Script' $argText"
+    $remote = "`$env:DESKSIDE_VIA = 'ssh'; `$env:DESKSIDE_ANNOUNCED = '1';`$env:DESKSIDE_HELPER = '$helper'; powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\ProgramData\deskside\app\scripts\$Script' $argText"
     & ssh.exe @ssh $target $remote
     $code = $LASTEXITCODE
     $after = (& ssh.exe @ssh $target 'Get-ChildItem C:\ProgramData\deskside\data\runs -Directory -EA SilentlyContinue | ForEach-Object Name') -split "`r?`n" | Where-Object { $_ }
