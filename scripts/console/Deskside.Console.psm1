@@ -120,26 +120,48 @@ function Start-MeshRoute {
     .OUTPUTS
         An object with LocalPort and Process; stop it with Stop-MeshRoute.
     #>
+    <#
+    .NOTES
+        MeshCmd's serverHttpsHash is a SHA-384 of a certificate's public key, accepted when it matches ANY certificate the
+        server sends, roots included, and with no host-name check. So deskside pins the server's own key (the first
+        certificate), never a CA's, and with serverHttpsHash (no serverId) it only maps ports over a relay that resolves
+        to VPN addresses, where the VPN itself authenticates the server.
+    #>
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Device, [int]$RemotePort = 22, [switch]$NoHashRefresh)
     $s = Get-MeshSetting
-    $route = Start-MeshRouteOnce -Settings $s -Device $Device -RemotePort $RemotePort
-    # MeshCmd checks the server's certificate only when a connection goes through, so make one now. If the pinned
-    # fingerprint no longer matches (the proxy's certificate was renewed), MeshCmd exits printing the new one.
-    $newHash = Test-MeshRouteServer -Route $route
-    if ($newHash) {
-        Stop-MeshRoute -Route $route
-        if ($NoHashRefresh -or -not (Test-PrivateRelay -Settings $s)) {
-            throw "The MeshCentral server's certificate no longer matches meshcentral.json's serverHttpsHash. Check the server, then set serverHttpsHash to the new fingerprint MeshCmd reports."
-        }
-        # Over a private VPN relay the VPN already authenticates the server, so a renewed certificate is accepted and
-        # recorded, and the helper is told.
-        Update-MeshServerHash -Hash $newHash
-        Write-Warning "The MeshCentral server's certificate changed; meshcentral.json now holds the new fingerprint."
-        $route = Start-MeshRouteOnce -Settings (Get-MeshSetting) -Device $Device -RemotePort $RemotePort
-        if (Test-MeshRouteServer -Route $route) { Stop-MeshRoute -Route $route; throw 'MeshCmd rejected the server certificate twice.' }
+    $byServerId = $s.PSObject.Properties['serverId'] -and $s.serverId
+    if (-not $byServerId -and -not (Test-PrivateRelay -Settings $s)) {
+        throw "meshcentral.json's relay doesn't resolve to VPN addresses. With only a certificate fingerprint to check the server, deskside maps ports only over a private VPN relay."
     }
-    return $route
+    # MeshCmd connects to the server and checks its certificate as the route starts.
+    try { return Start-MeshRouteOnce -Settings $s -Device $Device -RemotePort $RemotePort }
+    catch {
+        if ($_.Exception.Message -notmatch 'Failed to verify server certificate') { throw }
+        if ($NoHashRefresh -or $byServerId) {
+            throw "MeshCmd rejected the MeshCentral server's certificate. Check the server, then refresh serverHttpsHash (Get-MeshServerKeyHash)."
+        }
+    }
+    # The server's key changed (its certificate was renewed). Over the VPN relay the VPN already authenticates the
+    # server, so the new key is read directly, recorded, and the helper is told.
+    Update-MeshServerHash -Hash (Get-MeshServerKeyHash -Settings $s)
+    Write-Warning "The MeshCentral server's certificate changed; meshcentral.json now holds its new key's fingerprint."
+    return Start-MeshRouteOnce -Settings (Get-MeshSetting) -Device $Device -RemotePort $RemotePort
+}
+
+function Get-MeshServerKeyHash {
+    <# SHA-384 of the relay server's own public key (its first certificate), in MeshCmd's serverHttpsHash form. #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Settings)
+    $u = [uri]((Get-MeshRelayUrl -Settings $Settings) -replace '^wss://', 'https://')
+    $tcp = [System.Net.Sockets.TcpClient]::new($u.Host, $u.Port)
+    try {
+        $ssl = [System.Net.Security.SslStream]::new($tcp.GetStream(), $false)
+        $ssl.AuthenticateAsClient($u.Host)
+        $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($ssl.RemoteCertificate)
+        $bytes = [System.Security.Cryptography.SHA384]::HashData($cert.PublicKey.EncodedKeyValue.RawData)
+        return [Convert]::ToHexString($bytes)
+    } finally { $tcp.Dispose() }
 }
 
 function Test-PrivateRelay {
@@ -147,14 +169,31 @@ function Test-PrivateRelay {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Settings)
     $h = ([uri]((Get-MeshRelayUrl -Settings $Settings) -replace '^wss://', 'https://')).Host
-    $ips = @([Net.Dns]::GetHostAddresses($h) | Where-Object { $_.AddressFamily -eq 'InterNetwork' })
-    if ($ips.Count -eq 0) { return $false }
-    foreach ($ip in $ips) { $b = $ip.GetAddressBytes(); if (-not ($b[0] -eq 100 -and $b[1] -ge 64 -and $b[1] -le 127)) { return $false } }
+    return Test-VpnAddress -Address ([Net.Dns]::GetHostAddresses($h))
+}
+
+function Test-VpnAddress {
+    <#
+        True when there is at least one address and every one is a VPN overlay address: IPv4 in 100.64/10, or IPv6 in
+        fd7a:115c:a1e0::/48 (Tailscale's own range). Anything else, public addresses included, makes it false.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([AllowEmptyCollection()][System.Net.IPAddress[]]$Address)
+    if (-not $Address -or $Address.Count -eq 0) { return $false }
+    foreach ($ip in $Address) {
+        $b = $ip.GetAddressBytes()
+        if ($ip.AddressFamily -eq 'InterNetwork') {
+            if (-not ($b[0] -eq 100 -and $b[1] -ge 64 -and $b[1] -le 127)) { return $false }
+        } elseif ($ip.AddressFamily -eq 'InterNetworkV6') {
+            if (-not ($b[0] -eq 0xfd -and $b[1] -eq 0x7a -and $b[2] -eq 0x11 -and $b[3] -eq 0x5c -and $b[4] -eq 0xa1 -and $b[5] -eq 0xe0)) { return $false }
+        } else { return $false }
+    }
     return $true
 }
 
 function Update-MeshServerHash {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Updates one field of the private store''s settings, only after MeshCmd reported a renewed certificate over a private VPN relay.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Updates one field of the private store''s settings, only after MeshCmd rejected the pinned key over a private VPN relay.')]
     [CmdletBinding()]
     param([Parameter(Mandatory)][ValidatePattern('^[0-9A-F]{96}$')][string]$Hash)
     $path = Join-Path (Get-RecordsRoot) 'meshcentral.json'
@@ -162,21 +201,6 @@ function Update-MeshServerHash {
     $doc.serverHttpsHash = $Hash
     $doc | Add-Member -NotePropertyName serverHttpsHashReadUtc -NotePropertyValue (Get-Date).ToUniversalTime().ToString('o') -Force
     ($doc | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $path
-}
-
-function Test-MeshRouteServer {
-    <# Opens one connection through the route. Returns the new fingerprint if MeshCmd rejected the server's certificate, else $null. #>
-    [CmdletBinding()]
-    param([Parameter(Mandatory)]$Route)
-    $c = [System.Net.Sockets.TcpClient]::new()
-    try { $c.Connect([System.Net.IPAddress]::Loopback, $Route.LocalPort) } catch { Write-Verbose 'Connecting to the local port failed.' }
-    $deadline = (Get-Date).AddSeconds(6)
-    while ((Get-Date) -lt $deadline -and -not $Route.Process.HasExited) { Start-Sleep -Milliseconds 300 }
-    $c.Close()
-    if (-not $Route.Process.HasExited) { return $null }
-    $o = Get-Content -LiteralPath (Join-Path $Route.WorkDir 'out.txt') -Raw -ErrorAction SilentlyContinue
-    if ($o -match 'Failed to verify server certificate' -and $o -match 'Server TLS hash: ([0-9A-F]{96})') { return $Matches[1] }
-    throw "MeshCmd stopped: $(($o -replace '[0-9A-Fa-f]{32,}', '<hex>').Trim())"
 }
 
 function Start-MeshRouteOnce {

@@ -79,6 +79,8 @@ try {
         $prompt = "Use the diagnose skill on the PC with alias $Alias. Add -Arguments '-Quick'. Then give the summary as the skill says."
         $allowed = 'PowerShell(pwsh -File scripts/console/Invoke-DesksideRemote.ps1:*),Bash(pwsh -File scripts/console/Invoke-DesksideRemote.ps1:*),Read,Glob,Grep,Skill'
         Push-Location $root
+        # Tool rules don't stop a shell from writing, so the tree itself is compared before and after.
+        $treeBefore = (git -C $root status --porcelain | Out-String)
         # The proof must not be able to patch the code it proves: no edits, only the console's own runner.
         $denied = 'Edit,Write,NotebookEdit'
         try { $reply = ($prompt | & claude -p --allowedTools $allowed --disallowedTools $denied --max-turns 20 2>&1 | Out-String) } finally { Pop-Location }
@@ -86,7 +88,13 @@ try {
         $valid = $false
         if ($rec) { try { $valid = ((Get-Content -LiteralPath $rec.FullName -Raw | ConvertFrom-Json).schema -eq 'deskside.record/v1') } catch { $valid = $false } }
         Set-Content -LiteralPath (Join-Path $out 'claude-reply.txt') -Value $reply
-        Write-HostStep 'claude-diagnose' $valid $(if ($valid) { 'Claude Code ran diagnose remotely; the record came back to the store' } else { 'no diagnose record came back; see claude-reply.txt' })
+        $treeAfter = (git -C $root status --porcelain | Out-String)
+        $untouched = $treeAfter -eq $treeBefore
+        $detail = if (-not $untouched) { 'Claude Code changed files in the repo during the proof (git status differs)' }
+            elseif ($valid) { 'Claude Code ran diagnose remotely; the record came back to the store; repo untouched' }
+            else { 'no diagnose record came back; see claude-reply.txt' }
+        $valid = $valid -and $untouched
+        Write-HostStep 'claude-diagnose' $valid $detail
         if (-not $valid) { $failed++ }
     }
 } finally {

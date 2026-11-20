@@ -26,14 +26,18 @@
 - **The route**: MeshCmd's `route` action maps a free local port to port 22 on the PC, through the server (MeshCentral
   docs, *MeshCmd*). MeshCmd itself is downloaded from the server (`/meshagents?meshcmd=4`), so its version always
   matches. The action file carrying the login is deleted as soon as MeshCmd has read it. MeshCmd checks the server by
-  `serverId` (its certificate's key hash) or, when that's absent, by `serverHttpsHash` (the TLS certificate's
-  fingerprint). Behind a proxy that presents its own certificate only the fingerprint works: MeshCmd prints it as
-  `Server TLS hash:` when run once with a dummy hash, and it must be read again when the proxy's certificate changes.
-  `relayUrl` in `meshcentral.json` points MeshCmd at a relay address other than the agents' one (for example, agents
+  `serverId` (the MeshCentral server's own key, which the server proves by signing) or, when that's absent, by
+  `serverHttpsHash`. Behind a proxy that presents its own certificate only `serverHttpsHash` works, and it is weaker
+  than it looks: it's a SHA-384 of a certificate's public key, accepted when it matches *any* certificate the server
+  sends, CA and root certificates included, with no host-name check. Pinning a root's key would accept any site that
+  sends that root. So deskside pins the server's own key (`Get-MeshServerKeyHash`), and with `serverHttpsHash` alone
+  it maps ports only over a relay whose name resolves to VPN overlay addresses, where the VPN authenticates the server.
+  When the server's certificate is renewed and MeshCmd rejects the pin, the route reads the new key over that relay,
+  records it in `meshcentral.json` and warns. `relayUrl` in `meshcentral.json` points MeshCmd at a relay address other than the agents' one (for example, agents
   on a public address and the console on a private one). deskside never sets MeshCmd's `debugLevel`: above 0 it prints
   the login.
 - **The device id**: `Install-MeshAgent.ps1` records the agent's MeshCentral node id (`MeshAgent.exe -nodeid`, turned
-  into `node//...`) in its run record, which the console copies into `devices.json`.
+  into `node//...`) in its run record; the helper copies it into `devices.json` when enrolling (the `enroll` skill).
 - **The login** for MeshCmd and for removing devices is a MeshCentral login token kept in a password manager and read
   by reference (`meshcentral.json` in the private records store); nothing about the server lives in this repo.
 - **Removal**: `scripts/remote/Remove-RemoteHelp.ps1` (the person can run it from the desktop shortcut) uninstalls the

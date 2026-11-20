@@ -36,9 +36,10 @@ work-or-school stop on a real Entra-joined or domain-joined PC (the Sandbox proo
 - The console's MeshCentral login is relay-only, so it can't delete devices: removing a real PC from the server is a
   web-page step (`Remove-DesksideDevice.ps1` prints it). A login allowed to delete devices plus meshctrl.js would
   automate it.
-- MeshCmd pins the server certificate's fingerprint (`serverHttpsHash`); behind the server's proxy `serverId` doesn't
-  work. When the certificate is renewed, the route takes the new fingerprint only over a relay that resolves to VPN
-  addresses, and warns.
+- Behind the server's proxy `serverId` doesn't work, so MeshCmd checks `serverHttpsHash`, which matches any
+  certificate in the chain with no host-name check. deskside pins the server's own key and maps ports only over a relay
+  that resolves to VPN addresses; when the certificate is renewed the route reads the new key over that relay and warns
+  (docs/remote-access.md).
 - Request Help needs MeshCentral Assistant on the PC; deskside doesn't install it.
 - Only 64-bit Intel/AMD PCs get the agent for now; ARM64 needs MeshCentral's ARM64 agent id.
 - Diagnostics over MeshCentral's run-command run as SYSTEM, so per-user sections (OneDrive folders, the account) read

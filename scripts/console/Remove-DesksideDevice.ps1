@@ -45,7 +45,8 @@ if ($RemovedInWebUi) {
     }
 } elseif ($canMeshctrl) {
     $login = Get-MeshLogin -Settings ([pscustomobject]@{ login = $s.removeLogin })
-    $wss = ($s.serverUrl.TrimEnd('/') -replace '^https://', 'wss://')
+    # The console's relay host (the private one when set), not the agents' public address.
+    $wss = (Get-MeshRelayUrl -Settings $s) -replace '/meshrelay\.ashx$', ''
     if ($PSCmdlet.ShouldProcess($Alias, 'Remove from the MeshCentral server')) {
         & node $s.meshctrl removedevice --id $device.meshNodeId --url $wss --loginuser $login.User --loginpass $login.Password
         if ($LASTEXITCODE -ne 0) { throw "meshctrl removedevice failed ($LASTEXITCODE)." }
