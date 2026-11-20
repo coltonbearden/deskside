@@ -121,8 +121,69 @@ function Start-MeshRoute {
         An object with LocalPort and Process; stop it with Stop-MeshRoute.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)]$Device, [int]$RemotePort = 22)
+    param([Parameter(Mandatory)]$Device, [int]$RemotePort = 22, [switch]$NoHashRefresh)
     $s = Get-MeshSetting
+    $route = Start-MeshRouteOnce -Settings $s -Device $Device -RemotePort $RemotePort
+    # MeshCmd checks the server's certificate only when a connection goes through, so make one now. If the pinned
+    # fingerprint no longer matches (the proxy's certificate was renewed), MeshCmd exits printing the new one.
+    $newHash = Test-MeshRouteServer -Route $route
+    if ($newHash) {
+        Stop-MeshRoute -Route $route
+        if ($NoHashRefresh -or -not (Test-PrivateRelay -Settings $s)) {
+            throw "The MeshCentral server's certificate no longer matches meshcentral.json's serverHttpsHash. Check the server, then set serverHttpsHash to the new fingerprint MeshCmd reports."
+        }
+        # Over a private VPN relay the VPN already authenticates the server, so a renewed certificate is accepted and
+        # recorded, and the helper is told.
+        Update-MeshServerHash -Hash $newHash
+        Write-Warning "The MeshCentral server's certificate changed; meshcentral.json now holds the new fingerprint."
+        $route = Start-MeshRouteOnce -Settings (Get-MeshSetting) -Device $Device -RemotePort $RemotePort
+        if (Test-MeshRouteServer -Route $route) { Stop-MeshRoute -Route $route; throw 'MeshCmd rejected the server certificate twice.' }
+    }
+    return $route
+}
+
+function Test-PrivateRelay {
+    <# True when the relay's host resolves only to VPN addresses in the shared 100.64/10 range (WireGuard-style overlays such as Tailscale use it). #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Settings)
+    $h = ([uri]((Get-MeshRelayUrl -Settings $Settings) -replace '^wss://', 'https://')).Host
+    $ips = @([Net.Dns]::GetHostAddresses($h) | Where-Object { $_.AddressFamily -eq 'InterNetwork' })
+    if ($ips.Count -eq 0) { return $false }
+    foreach ($ip in $ips) { $b = $ip.GetAddressBytes(); if (-not ($b[0] -eq 100 -and $b[1] -ge 64 -and $b[1] -le 127)) { return $false } }
+    return $true
+}
+
+function Update-MeshServerHash {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Updates one field of the private store''s settings, only after MeshCmd reported a renewed certificate over a private VPN relay.')]
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][ValidatePattern('^[0-9A-F]{96}$')][string]$Hash)
+    $path = Join-Path (Get-RecordsRoot) 'meshcentral.json'
+    $doc = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+    $doc.serverHttpsHash = $Hash
+    $doc | Add-Member -NotePropertyName serverHttpsHashReadUtc -NotePropertyValue (Get-Date).ToUniversalTime().ToString('o') -Force
+    ($doc | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $path
+}
+
+function Test-MeshRouteServer {
+    <# Opens one connection through the route. Returns the new fingerprint if MeshCmd rejected the server's certificate, else $null. #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Route)
+    $c = [System.Net.Sockets.TcpClient]::new()
+    try { $c.Connect([System.Net.IPAddress]::Loopback, $Route.LocalPort) } catch { Write-Verbose 'Connecting to the local port failed.' }
+    $deadline = (Get-Date).AddSeconds(6)
+    while ((Get-Date) -lt $deadline -and -not $Route.Process.HasExited) { Start-Sleep -Milliseconds 300 }
+    $c.Close()
+    if (-not $Route.Process.HasExited) { return $null }
+    $o = Get-Content -LiteralPath (Join-Path $Route.WorkDir 'out.txt') -Raw -ErrorAction SilentlyContinue
+    if ($o -match 'Failed to verify server certificate' -and $o -match 'Server TLS hash: ([0-9A-F]{96})') { return $Matches[1] }
+    throw "MeshCmd stopped: $(($o -replace '[0-9A-Fa-f]{32,}', '<hex>').Trim())"
+}
+
+function Start-MeshRouteOnce {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Starts a local MeshCmd process; changes nothing on either machine.')]
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Settings, [Parameter(Mandatory)]$Device, [int]$RemotePort = 22)
+    $s = $Settings
     $login = Get-MeshLogin -Settings $s
     $exe = Get-MeshCmd -Settings $s
     $port = Get-FreePort
