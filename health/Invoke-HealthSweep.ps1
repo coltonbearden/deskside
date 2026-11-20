@@ -104,7 +104,8 @@ function Push-Status([string]$Status, [string]$Message) {
 }
 
 try {
-    if (git -C $records rev-parse --abbrev-ref '@{upstream}' 2>$null) {
+    $upstream = & git -C $records rev-parse --abbrev-ref '@{upstream}' 2>$null
+    if ($LASTEXITCODE -eq 0 -and $upstream) {
         $script:Step = 'updating the records checkout'
         Invoke-Git @('pull', '--ff-only', '-q')
     }
