@@ -35,8 +35,9 @@ the Sandbox's logon command and writes one JSON line per step.
 | mesh-agent | the MeshCentral agent installs and runs (needs `-ServerUrl` and `-GroupId`) |
 | remove-remote-help | agent, sshd, key, shortcut and remote consent are all gone |
 
-With a server, the Sandbox waits after `mesh-agent` while `-HostCheck` runs on the helper's machine: the port map,
-SSH through it, Claude Code running the diagnostics remotely. Then the device is removed from the server.
+With a server (`-Remote`), the Sandbox waits after `mesh-agent` while the host check runs on the helper's machine:
+`host:route-ssh` (the port map and SSH through it) and `host:claude-diagnose` (Claude Code running the diagnostics
+remotely). The Proofs group removes the device from the server when the agent is uninstalled.
 
 ## Results
 
@@ -53,7 +54,20 @@ SSH through it, Claude Code running the diagnostics remotely. Then the device is
 - 2026-11-19, -Source github at 401f197: **15 of 15 passed**, including install-undo-file (all six apps in undo.json).
 - 2026-11-19, `-Source github` at a40e3d2, with the new steps: **19 of 19 passed**: managed-stop (an MDM enrollment
   planted: report on screen, nothing written), remove-marked-app, problem-flow and power-profile included.
-- The mesh-agent step and the host-side checks wait for the MeshCentral server.
+- 2026-11-19, `-Source github -Remote` at fb800bd against the live server (Proofs group): **23 of 23 passed**, but
+  the nested Claude Code session found that its remote run failed on the PC's default script policy and fixed the
+  console itself mid-run (d0fb4a5: `powershell.exe -ExecutionPolicy Bypass -File` for that run only). The host check
+  now forbids edits, so a proof can't patch what it proves.
+- 2026-11-20, `-Source github -Remote` at d0fb4a5 (console at 6910365, which also checks the server certificate when
+  the route starts): **23 of 23 passed, no edits.** mesh-agent (agent running, node id handed over), host:route-ssh
+  (MeshCmd port map over the private relay, SSH with the proof key, Windows PowerShell 5.1), host:claude-diagnose
+  (Claude Code on the helper's machine ran the `diagnose` skill; the record came back to the throwaway store),
+  remove-remote-help (nothing left behind). The server's admin side confirmed the Proofs group held no device after
+  the first run's agent left.
+
+`-Remote` takes the server and the Proofs group from the private records store. The host half is
+`sandbox/Invoke-HostCheck.ps1`: a throwaway records store with only the Sandbox in it, the proof's throwaway key
+(`DESKSIDE_SSH_IDENTITY`), and Claude Code allowed only the console's runner and reading.
 
 ## What Sandbox can't prove
 

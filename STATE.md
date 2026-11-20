@@ -9,19 +9,19 @@
   the yes/no change list, the MeshCentral agent install and removal, loopback-only SSH, the console scripts and the
   `.claude/` console are built. `Invoke-Check.ps1 -Integration` passes locally under Windows PowerShell 5.1 and
   PowerShell 7, and in GitHub Actions.
-- **In flight:** the end-to-end proof's remote half (agent online on the server, SSH through MeshCentral's port map,
-  Claude Code running the diagnostics remotely, device removed from the server) waits for the MeshCentral server.
-  Everything up to and including loopback SSH and removal is proven in Windows Sandbox from the README's one-liner,
-  19 of 19 steps at a40e3d2 (docs/sandbox-proof.md, 2026-11-19). Not yet run anywhere: the console scripts
-  (they need the server), the developer profile (WSL needs nested virtualization) and the agent install.
+- **Proven end to end:** the README's one-liner through remote help, against the live MeshCentral server, in Windows
+  Sandbox: 23 of 23 steps at d0fb4a5 with the console at 6910365 (docs/sandbox-proof.md, 2026-11-20). The agent
+  joins the Proofs group, the console's MeshCmd port map and SSH reach the PC, Claude Code on the helper's machine runs
+  the diagnose skill and the record comes back, and removal leaves nothing on the PC or the server. Not yet run
+  anywhere: the developer profile (WSL needs nested virtualization), `Remove-DesksideDevice` against a real device,
+  the console's `onboard`/`undo` skills remotely.
 - **Waiting on the owner:** the `deskside-ssh` SSH Key item in 1Password (Personal vault), whose public key the
-  `enroll` skill installs on each PC; Dependabot's PR #1 (actions/checkout 4 to 7, checks green).
+  `enroll` skill installs on each PC; Dependabot's PR #1 (actions/checkout 4 to 7, checks green); scheduling the
+  health sweep beside the server.
 - **How a failure reaches the owner:** CI failures show on GitHub. The health sweep (health/Invoke-HealthSweep.ps1)
   pushes to an uptime monitor whose downs become tasks; it's scheduled by the homelab's stack repo beside the
   MeshCentral server, not from here.
-- **Next:** when the server exists, fill `meshcentral.json` in the records store, run
-  `sandbox/Invoke-SandboxProof.ps1 -Source github -ServerUrl ... -GroupId ... -HostCheck {...}`, then remove the
-  Sandbox's device from the server.
+- **Next:** the first real PC, with its owner's yes (`enroll` skill); the health sweep on the server's node.
 
 ## Proved on the first real PC, not in Windows Sandbox
 
@@ -33,8 +33,13 @@ work-or-school stop on a real Entra-joined or domain-joined PC (the Sandbox proo
 
 ## Open issues
 
-- MeshCentral details (server URL, group id, server id and certificate hash for MeshCmd, the automation login's
-  password-manager references, where meshctrl.js lives on the helper's machine) aren't known until the server exists.
+- The console's MeshCentral login is relay-only, so it can't delete devices: removing a real PC from the server is a
+  web-page step (`Remove-DesksideDevice.ps1` prints it). A login allowed to delete devices plus meshctrl.js would
+  automate it.
+- MeshCmd pins the server certificate's fingerprint (`serverHttpsHash`); behind the server's proxy `serverId` doesn't
+  work. When the certificate is renewed, the route takes the new fingerprint only over a relay that resolves to VPN
+  addresses, and warns.
+- Request Help needs MeshCentral Assistant on the PC; deskside doesn't install it.
 - Only 64-bit Intel/AMD PCs get the agent for now; ARM64 needs MeshCentral's ARM64 agent id.
 - Diagnostics over MeshCentral's run-command run as SYSTEM, so per-user sections (OneDrive folders, the account) read
   SYSTEM's profile there; the console's SSH runs read the person's.
