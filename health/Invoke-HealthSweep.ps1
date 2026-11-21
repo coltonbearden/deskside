@@ -177,7 +177,10 @@ try {
         }
     }
 
-    if (-not $DryRun) {
+    # With no PC enrolled yet there is no devices/ folder (or only empty ones), and `git add` would fail on the
+    # missing path: nothing to commit, so straight to the report.
+    $written = Get-ChildItem (Join-Path $records 'devices') -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $DryRun -and $written) {
         $script:Step = 'committing the records'
         Invoke-Git @('add', '-A', 'devices')
         & git -C $records diff --cached --quiet

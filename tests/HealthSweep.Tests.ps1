@@ -135,6 +135,14 @@ Describe 'Invoke-HealthSweep' {
         $rec.pad.Length | Should -Be 30000
     }
 
+    It 'reports up with no PC enrolled, and commits nothing' {
+        $s = New-RecordsStore
+        $r = Invoke-Sweep $s @{ STUB_DEVICES = '[]' }
+        $r.Code | Should -Be 0
+        $r.Monitor | Should -Be 'monitor: up 0 PC(s) checked, nothing needs attention'
+        @(git -C $s.Bare rev-list main).Count | Should -Be 1
+    }
+
     It 'pushes nothing with -DryRun' {
         $s = New-RecordsStore
         $r = Invoke-Sweep $s @{} @('-DryRun')
