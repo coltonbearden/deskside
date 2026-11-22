@@ -864,6 +864,114 @@ function Test-DesksideSettingCompliant {
     }
     throw "Unknown item type $($Item.type)"
 }
+function Get-SmartAppControlState {
+    <#
+    .SYNOPSIS
+        Smart App Control's state: On, Eval, Off or Unknown.
+    .DESCRIPTION
+        Defender's status first (SmartAppControlState), then the code-integrity policy value Windows keeps it in
+        (HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy, VerifiedAndReputablePolicyState: 0 Off, 1 On, 2 Eval).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+    $state = $null
+    try { $state = [string](Get-MpComputerStatus -ErrorAction Stop).SmartAppControlState } catch { $state = $null }
+    if ($state -in 'On', 'Off', 'Eval') { return $state }
+    try {
+        $v = [int](Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' -Name VerifiedAndReputablePolicyState -ErrorAction Stop).VerifiedAndReputablePolicyState
+        switch ($v) { 0 { return 'Off' } 1 { return 'On' } 2 { return 'Eval' } }
+    } catch { $null = $_ }
+    return 'Unknown'
+}
 
+function Test-AgentBlocked {
+    <#
+    .SYNOPSIS
+        True when Smart App Control would block the agent: it is on and the agent's signature isn't one Windows trusts.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$State, [Parameter(Mandatory)][AllowEmptyString()][string]$Signature)
+    return ($State -eq 'On' -and $Signature -ne 'Valid')
+}
+
+function Get-AgentBlockedText {
+    <# The plain message shown when Smart App Control would block the agent. #>
+    [CmdletBinding()]
+    param([string]$HelperName = 'your helper')
+    return ('Smart App Control is on and the agent is not yet signed with a certificate Windows trusts, so Windows would block it. Nothing was changed. Run this again once ' + $HelperName + ' says the agent is signed.')
+}
+
+function Get-ProfileFolder {
+    <# Every local profile folder (C:\Users\<name>) that isn't a special account. #>
+    [CmdletBinding()]
+    param()
+    $list = @()
+    foreach ($p in @(Get-CimInstance Win32_UserProfile -Filter 'Special = False' -ErrorAction SilentlyContinue)) {
+        if ($p.LocalPath -and (Test-Path -LiteralPath $p.LocalPath)) { $list += $p.LocalPath }
+    }
+    return $list
+}
+
+function Remove-EnrollTrace {
+    <#
+    .SYNOPSIS
+        Removes what an earlier enroll attempt can leave behind on this PC and returns counts only.
+    .DESCRIPTION
+        - Temp folders a failed agent download left: deskside-mesh-* and deskside-check-* in each profile's Temp and
+          Windows' own Temp.
+        - Lines in each profile's PowerShell history (PSReadLine's *_history.txt) that ran Install-MeshAgent or carry a
+          device group id (-GroupId, meshid=, or the id itself), since a hand-typed one holds the group id.
+        - Defender's allow for detection 489403 (PUA:Win32/MeshCenAgent), a rejected suggestion, unless deskside's own
+          record says deskside placed it.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param([string]$GroupId, [string[]]$ProfileFolder = @(Get-ProfileFolder), [string]$SystemTemp = (Join-Path $env:SystemRoot 'Temp'))
+    $result = [ordered]@{ tempFolders = 0; historyLines = 0; historyFiles = 0; defenderAllow = 'none' }
+    $temps = @($SystemTemp) + @($ProfileFolder | ForEach-Object { Join-Path $_ 'AppData\Local\Temp' })
+    foreach ($t in $temps) {
+        foreach ($f in 'deskside-mesh-*', 'deskside-check-*') {
+            foreach ($d in @(Get-ChildItem -LiteralPath $t -Directory -Filter $f -Force -ErrorAction SilentlyContinue)) {
+                if ($PSCmdlet.ShouldProcess($d.Name, 'Remove leftover agent download')) {
+                    Remove-Item -LiteralPath $d.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                    if (-not (Test-Path -LiteralPath $d.FullName)) { $result.tempFolders++ }
+                }
+            }
+        }
+    }
+    $patterns = @('Install-MeshAgent', '-GroupId', 'meshid=')
+    foreach ($p in $ProfileFolder) {
+        $dir = Join-Path $p 'AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine'
+        foreach ($h in @(Get-ChildItem -LiteralPath $dir -Filter '*_history.txt' -File -Force -ErrorAction SilentlyContinue)) {
+            $lines = @([IO.File]::ReadAllLines($h.FullName))
+            $keep = New-Object System.Collections.Generic.List[string]
+            $drop = 0
+            foreach ($l in $lines) {
+                $hit = $false
+                foreach ($pat in $patterns) { if ($l.IndexOf($pat, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $hit = $true } }
+                if ($GroupId -and $l.Contains($GroupId)) { $hit = $true }
+                if ($hit) { $drop++ } else { $keep.Add($l) }
+            }
+            if ($drop -gt 0 -and $PSCmdlet.ShouldProcess($h.Name, "Remove $drop history line(s)")) {
+                [IO.File]::WriteAllLines($h.FullName, $keep.ToArray(), (New-Object Text.UTF8Encoding($false)))
+                $result.historyLines += $drop
+                $result.historyFiles++
+            }
+        }
+    }
+    try {
+        $ids = @((Get-MpPreference -ErrorAction Stop).ThreatIDDefaultAction_Ids)
+        if ($ids -contains 489403) {
+            $ours = Test-Path -LiteralPath (Join-Path (Get-DesksideDataRoot) 'defender-allow.json')
+            if ($ours) { $result.defenderAllow = 'kept (deskside placed it)' }
+            elseif ($PSCmdlet.ShouldProcess('Defender allow for detection 489403', 'Remove')) {
+                Remove-MpPreference -ThreatIDDefaultAction_Ids 489403 -ErrorAction Stop
+                $result.defenderAllow = 'removed'
+            }
+        }
+    } catch { $result.defenderAllow = 'could not read Defender' }
+    return [pscustomobject]$result
+}
 
 Export-ModuleMember -Function *

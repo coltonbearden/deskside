@@ -16,6 +16,11 @@
     1Password by its "proofGroupRef" (a group that removes devices when they disconnect), and
     sandbox\Invoke-HostCheck.ps1 as the host check.
 
+    -UsbKit proves the USB kit instead (sandbox\kit-inner.ps1): New-DesksideUsbKit.ps1 -Proof builds a kit of the
+    committed HEAD into a folder mapped writable at C:\kit, the Sandbox runs it (stopped by a forced Smart App Control,
+    then for real, then again), and this machine reads it back with Read-DesksideUsbKit.ps1 into a temporary records
+    folder. 1Password is asked at the start (the kit's values) and when the kit is read back.
+
     Only one Windows Sandbox can run at a time; close any other first.
 #>
 [CmdletBinding()]
@@ -26,6 +31,7 @@ param(
     [string]$GroupId,
     [scriptblock]$HostCheck,
     [switch]$Remote,
+    [switch]$UsbKit,
     [string]$WorkDir = (Join-Path $env:TEMP 'deskside-proof'),
     [int]$TimeoutMinutes = 60
 )
@@ -70,6 +76,28 @@ $realPub = $null
 if ($Remote) { $realPub = (Get-Content -LiteralPath (Get-SshPublicKeyFile -Settings $ms) -Raw).Trim() }
 [ordered]@{ source = $Source; ref = $Ref; serverUrl = $ServerUrl; groupId = $GroupId; publicKey = $pub; realPublicKey = $realPub } | ConvertTo-Json | Set-Content (Join-Path $in 'proof-config.json')
 
+$inner = 'proof-inner.ps1'
+$kitMap = ''
+if ($UsbKit) {
+    # The kit stands in for a USB drive: built here from 1Password, run in the Sandbox, read back here.
+    $kitDir = Join-Path $WorkDir 'kit'
+    $recDir = Join-Path $WorkDir 'records'
+    New-Item -ItemType Directory -Force -Path $kitDir, $recDir | Out-Null
+    & (Join-Path $root 'scripts\console\New-DesksideUsbKit.ps1') -Path $kitDir -Proof
+    Copy-Item (Join-Path $PSScriptRoot 'kit-inner.ps1') $in
+    $inner = 'kit-inner.ps1'
+    $kitMap = "<MappedFolder><HostFolder>$kitDir</HostFolder><SandboxFolder>C:\kit</SandboxFolder><ReadOnly>false</ReadOnly></MappedFolder>"
+    $readScript = Join-Path $root 'scripts\console\Read-DesksideUsbKit.ps1'
+    $outDir = $out
+    $HostCheck = {
+        $o = & $readScript -Path $kitDir -Alias 'sandbox-proof' -RecordsRoot $recDir 6>&1 | Out-String
+        $o | Set-Content (Join-Path $outDir 'read-back.txt')
+        $ok = $o -match 'group id still on the drive: 0 of' -and $o -match 'values\.json: already removed by the kit'
+        ([pscustomobject]@{ step = 'read-back'; ok = $ok; time = (Get-Date).ToString('HH:mm:ss'); detail = (($o -split "`r?`n" | Where-Object { $_ }) -join '; ') } | ConvertTo-Json -Compress) |
+            Add-Content (Join-Path $outDir 'host-steps.jsonl')
+    }.GetNewClosure()
+}
+
 $wsb = @"
 <Configuration>
   <Networking>Enable</Networking>
@@ -77,8 +105,9 @@ $wsb = @"
   <MappedFolders>
     <MappedFolder><HostFolder>$in</HostFolder><SandboxFolder>C:\in</SandboxFolder><ReadOnly>true</ReadOnly></MappedFolder>
     <MappedFolder><HostFolder>$out</HostFolder><SandboxFolder>C:\out</SandboxFolder><ReadOnly>false</ReadOnly></MappedFolder>
+    $kitMap
   </MappedFolders>
-  <LogonCommand><Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\in\proof-inner.ps1</Command></LogonCommand>
+  <LogonCommand><Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\in\$inner</Command></LogonCommand>
 </Configuration>
 "@
 $wsbPath = Join-Path $WorkDir 'proof.wsb'

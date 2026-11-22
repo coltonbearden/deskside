@@ -42,13 +42,18 @@ if ($svc) {
     $ProgressPreference = 'SilentlyContinue'
     $tmp = Join-Path $env:TEMP ('deskside-mesh-' + [guid]::NewGuid())
     New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-    $exe = Join-Path $tmp 'meshagent.exe'
-    $url = $ServerUrl.TrimEnd('/') + '/meshagents?id=4&meshid=' + [uri]::EscapeDataString($GroupId) + '&installflags=0'
-    Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing
-    $sig = Get-AuthenticodeSignature -FilePath $exe
-    $run.Data['agentSignature'] = [string]$sig.Status
-    $p = Start-Process -FilePath $exe -ArgumentList '-fullinstall' -Wait -PassThru -WindowStyle Hidden
-    Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    try {
+        $exe = Join-Path $tmp 'meshagent.exe'
+        $url = $ServerUrl.TrimEnd('/') + '/meshagents?id=4&meshid=' + [uri]::EscapeDataString($GroupId) + '&installflags=0'
+        Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing
+        $sig = [string](Get-AuthenticodeSignature -FilePath $exe).Status
+        $sac = Get-SmartAppControlState
+        $run.Data['agentSignature'] = $sig
+        $run.Data['smartAppControl'] = $sac
+        # Smart App Control blocks an agent signed only by the server's own certificate: stop before running it.
+        if (Test-AgentBlocked -State $sac -Signature $sig) { throw (Get-AgentBlockedText) }
+        $p = Start-Process -FilePath $exe -ArgumentList '-fullinstall' -Wait -PassThru -WindowStyle Hidden
+    } finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
     $deadline = (Get-Date).AddSeconds(60)
     do { Start-Sleep -Seconds 2; $svc = Get-Service -Name 'Mesh Agent' -ErrorAction SilentlyContinue } while ((-not $svc -or $svc.Status -ne 'Running') -and (Get-Date) -lt $deadline)
     if (-not $svc -or $svc.Status -ne 'Running') { throw "The agent did not start (installer exit $($p.ExitCode))." }
