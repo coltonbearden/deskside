@@ -96,6 +96,11 @@ and `host:ssh-notice` (that run's record says the notice reached the one signed-
   files left, the log included. The Sandbox reports Smart App Control as Eval, and its Defender can't be read, so the
   489403 allow step reported "could not read Defender".
 
+- 2026-11-21, `-UsbKit -KitPath` again with a kit of e615650: **8 of 8 passed.** That kit runs Install-MeshAgent in its
+  own process and appends each run to its readback. The new step no-id-on-pc found the group id in no event of the
+  Windows PowerShell, PowerShell Operational or Application logs, no history file and no deskside file. kit-first-visit
+  took 18 minutes. Its read-back was not run: 1Password's prompt timed out twice, at 21:46 and on 11-22 at 17:04.
+
 `-UsbKit` runs `sandbox/kit-inner.ps1` with the kit folder mapped writable at `C:\kit`, standing in for the drive. Build
 the kit first and pass it with `-KitPath`, and read it back afterwards in the foreground. On 2026-11-21 op's approval
 timed out twice from a proof left running in the background, where the same read in the foreground worked at once.
