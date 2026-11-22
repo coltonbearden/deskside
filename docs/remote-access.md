@@ -35,8 +35,10 @@
     - Defender's allow for detection 489403, unless deskside placed it.
 
     Then it runs the remote consent, the agent, the help button and SSH. It writes `readback.txt` and `log.txt` on the
-    drive and deletes `values.json`. No value is ever on a command line of its own, so none reaches the transcript
-    header.
+    drive and deletes `values.json`. No value is ever on a command line. The kit's own command line holds none, so
+    none reaches the transcript header. It runs `Install-MeshAgent.ps1` in its own process, because Windows PowerShell's
+    event log keeps a child `powershell.exe`'s whole command line (`HostApplication` in events 400 and 403, seen on the
+    T14 on 2026-11-21).
   - `scripts/console/Read-DesksideUsbKit.ps1 -Drive E: -Alias <alias>`:
     - saves both files to the records store (`devices/<alias>/enroll/<stamp>/`);
     - overwrites and deletes `values.json` if the run left it;

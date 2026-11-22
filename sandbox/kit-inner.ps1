@@ -47,6 +47,7 @@ Invoke-Step 'plant-traces' {
     New-Item -ItemType Directory -Force -Path (Split-Path $hist -Parent), $leftover | Out-Null
     Set-Content -LiteralPath $hist -Value @('Get-Date', ('C:\ProgramData\deskside\app\scripts\remote\Install-MeshAgent.ps1 -ServerUrl https://x -GroupId ' + $g), 'Get-Service') -Encoding ascii
     Copy-Item -LiteralPath $values -Destination $saved
+    Set-Content -LiteralPath (Join-Path $env:TEMP 'kit-group.txt') -Value $g -Encoding ascii
     'one history line with the group id, one leftover download folder'
 }
 
@@ -89,6 +90,22 @@ Invoke-Step 'kit-again' {
     Assert-That (-not (Test-Path $values)) 'values.json is still on the drive'
     Remove-Item -LiteralPath $saved -Force
     'second run: scripts refreshed, agent still running, values removed again'
+}
+
+Invoke-Step 'no-id-on-pc' {
+    # The group id must not be left on the PC outside the agent's own settings: not in an event log (a child
+    # powershell.exe's command line is kept there), a history file or a run record.
+    $g = (Get-Content -LiteralPath (Join-Path $env:TEMP 'kit-group.txt') -Raw).Trim()
+    $where = @()
+    foreach ($log in 'Windows PowerShell', 'Microsoft-Windows-PowerShell/Operational', 'Application') {
+        $n = @(Get-WinEvent -LogName $log -ErrorAction SilentlyContinue | Where-Object { $_.Message -and $_.Message.Contains($g) }).Count
+        if ($n) { $where += "$n event(s) in $log" }
+    }
+    $files = @(Get-ChildItem 'C:\ProgramData\deskside', (Split-Path $hist -Parent) -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Length -lt 32MB -and [IO.File]::ReadAllText($_.FullName).Contains($g) })
+    if ($files.Count) { $where += "$($files.Count) file(s): " + (($files | ForEach-Object { $_.Name }) -join ', ') }
+    Remove-Item -LiteralPath (Join-Path $env:TEMP 'kit-group.txt') -Force
+    Assert-That ($where.Count -eq 0) ('the group id is on the PC: ' + ($where -join '; '))
+    'the group id is in no PowerShell or Application event, history file or deskside file'
 }
 
 Write-Step 'waiting-for-host' $true 'kit done; the host reads the drive back'

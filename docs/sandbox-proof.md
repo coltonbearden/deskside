@@ -97,8 +97,8 @@ and `host:ssh-notice` (that run's record says the notice reached the one signed-
   489403 allow step reported "could not read Defender".
 
 `-UsbKit` runs `sandbox/kit-inner.ps1` with the kit folder mapped writable at `C:\kit`, standing in for the drive. Build
-the kit first with `-KitPath`: 1Password approves op per terminal, so a proof left running in the background can't
-build the kit or read it back itself.
+the kit first and pass it with `-KitPath`, and read it back afterwards in the foreground. On 2026-11-21 op's approval
+timed out twice from a proof left running in the background, where the same read in the foreground worked at once.
 
 `-Remote` takes the server and the Proofs group from the private records store. The host half is
 `sandbox/Invoke-HostCheck.ps1`: a throwaway records store with only the Sandbox in it, the proof's throwaway key

@@ -18,8 +18,8 @@
 
     -UsbKit proves the USB kit instead (sandbox\kit-inner.ps1): New-DesksideUsbKit.ps1 -Proof builds a kit of the
     committed HEAD into a folder mapped writable at C:\kit, the Sandbox runs it (stopped by a forced Smart App Control,
-    then for real, then again). -KitPath takes a kit built beforehand (1Password asks for approval per terminal, so an
-    unattended run can't build one). Afterwards read the kit folder back with
+    then for real, then again). -KitPath takes a kit built beforehand (an op approval from a background run timed out
+    twice on 2026-11-21 where the same read in the foreground worked). Afterwards read the kit folder back with
     Read-DesksideUsbKit.ps1 -Path <kit> -Alias sandbox-proof -RecordsRoot <a temporary folder>.
 
     Only one Windows Sandbox can run at a time; close any other first.
@@ -82,8 +82,8 @@ $inner = 'proof-inner.ps1'
 $kitMap = ''
 if ($UsbKit) {
     # The kit stands in for a USB drive: built here from 1Password, run in the Sandbox, read back here.
-    # 1Password approves op per terminal, so a run left in the background can't ask it: build the kit first in the
-    # helper's own window (-KitPath) when this runs unattended.
+    # On 2026-11-21 op's approval timed out twice from a run left in the background and worked at once in the
+    # foreground: -KitPath takes a kit built beforehand, in the helper's own window.
     if ($KitPath) { $kitDir = (Resolve-Path -LiteralPath $KitPath).Path }
     else {
         $kitDir = Join-Path $WorkDir 'kit'

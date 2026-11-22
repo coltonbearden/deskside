@@ -134,7 +134,8 @@ if (-not $CheckOnly -and -not (Test-Admin)) {
     exit 0
 }
 if (-not $CheckOnly) { try { Start-Transcript -LiteralPath (Join-Path $drive 'log.txt') -Append | Out-Null } catch { $null = $_ } }
-Set-Content -LiteralPath $readback -Value ('run: ' + (Get-Date).ToString('s')) -Encoding ASCII
+# Each run appends its own section, so running the drive again never loses an earlier run's results.
+Add-Readback ('run: ' + (Get-Date).ToString('s'))
 Write-Say 'deskside remote help setup' 'Cyan'
 
 Import-Module (Join-Path $kit 'Deskside.Common.psm1') -Force
@@ -178,7 +179,12 @@ if (-not $hasRemote) {
     & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'scripts\onboard\Grant-Consent.ps1') -Scope remote @yes
     if ($LASTEXITCODE -ne 0) { Exit-Kit 'the owner did not agree to remote help, so nothing was installed.' }
 } else { Write-Say 'Owner''s yes to remote help: already recorded.' }
-Invoke-KitStep 'MeshCentral agent' 'scripts\remote\Install-MeshAgent.ps1' @('-ServerUrl', $values.serverUrl, '-GroupId', $values.groupId)
+# The agent runs in this process: a child powershell.exe's whole command line, group id included, would be kept in
+# the PC's "Windows PowerShell" event log (HostApplication, events 400 and 403).
+Write-Say ''; Write-Say '-- MeshCentral agent ...' 'Cyan'
+try { & (Join-Path $app 'scripts\remote\Install-MeshAgent.ps1') -ServerUrl $values.serverUrl -GroupId $values.groupId | Out-Host }
+catch { Exit-Kit ('MeshCentral agent failed: ' + $_.Exception.Message) }
+Add-Readback 'step MeshCentral agent: done'
 Invoke-KitStep 'Help button' 'scripts\remote\Install-HelpButton.ps1' @('-HelperName', $values.helperName)
 Invoke-KitStep 'Loopback SSH' 'scripts\remote\Enable-LoopbackSsh.ps1' @('-PublicKey', $values.publicKey)
 

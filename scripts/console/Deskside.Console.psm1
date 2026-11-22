@@ -417,6 +417,12 @@ function ConvertFrom-UsbKitReadback {
     [CmdletBinding()]
     param([Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Line)
     $show = New-Object System.Collections.Generic.List[string]
+    # Each run of the kit appends a section that starts 'run: '; the last one is what the drive says now.
+    $start = 0
+    for ($i = 0; $i -lt $Line.Count; $i++) { if ($Line[$i] -like 'run: *') { $start = $i } }
+    $runs = @($Line | Where-Object { $_ -like 'run: *' }).Count
+    $show.Add("runs on this drive: $runs (showing the last)")
+    $Line = @($Line | Select-Object -Skip $start)
     foreach ($l in $Line) {
         if ($l -match '^(stopped|smart app control|agent signature|deskside|removed|step [^:]+|service [^:]+|port 22 listens on|values):') { $show.Add($l) }
     }

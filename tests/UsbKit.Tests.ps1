@@ -155,6 +155,10 @@ Describe 'The kit''s order on the PC' {
             $Main.IndexOf($change) | Should -BeGreaterThan $check -Because "$change must come after the checks"
         }
     }
+    It 'runs no child powershell.exe with the group id (its command line would stay in the event log)' {
+        foreach ($l in ($Main -split "`r?`n" | Where-Object { $_ -match '& \$ps ' })) { $l | Should -Not -Match 'groupId' }
+        $Main | Should -Match "& \(Join-Path \`$app 'scripts\\remote\\Install-MeshAgent\.ps1'\) -ServerUrl \`$values\.serverUrl -GroupId \`$values\.groupId"
+    }
     It 'passes no value on its own command line (nothing for the transcript header)' {
         $Main | Should -Match "-ArgumentList @\('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', \('""' \+ \`$MyInvocation.MyCommand.Path \+ '""'\)\)"
     }
@@ -207,6 +211,16 @@ Describe 'Console: the drive' {
         { Assert-UsbKitTargetFree -Root $d } | Should -Throw '*not read back yet*'
         '{}' | Set-Content (Join-Path $d 'deskside\read-back.json')
         { Assert-UsbKitTargetFree -Root $d } | Should -Not -Throw
+    }
+}
+
+Describe 'ConvertFrom-UsbKitReadback' {
+    It 'shows the last run of several, and never the node or account' {
+        $s = ConvertFrom-UsbKitReadback -Line @('run: 1', 'stopped: Smart App Control is on', 'run: 2', 'node: node//N', 'account: someone', 'service Mesh Agent: Running')
+        $s | Should -Contain 'runs on this drive: 2 (showing the last)'
+        $s | Should -Contain 'service Mesh Agent: Running'
+        $s | Should -Not -Contain 'stopped: Smart App Control is on'
+        ($s -join '|') | Should -Not -Match 'someone|node//N'
     }
 }
 

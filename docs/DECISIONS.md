@@ -125,6 +125,9 @@ Smart App Control is not turned off.
 - **The kit changes nothing until the work-or-school and Smart App Control checks pass.** So a stopped run also leaves
   an earlier attempt's history line in place. A group id that got out is replaced on the server instead.
 - **The read-back scans the drive for the group id** after wiping, and reports a count.
+- **The kit runs `Install-MeshAgent.ps1` in its own process.** Windows PowerShell's event log keeps a child
+  `powershell.exe`'s whole command line (`HostApplication`, events 400 and 403), which would leave the group id on the
+  PC. The Sandbox proof checks the PowerShell and Application logs for it.
 
 Defender: the everyone profile turns on "Block potentially unwanted apps", and Defender's catalog lists
 `PUA:Win32/MeshCenAgent` (489403). On the T14 (Defender on, PUA in audit mode, definitions of 2026-11-21) the

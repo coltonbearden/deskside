@@ -922,7 +922,7 @@ function Remove-EnrollTrace {
         - Temp folders a failed agent download left: deskside-mesh-* and deskside-check-* in each profile's Temp and
           Windows' own Temp.
         - Lines in each profile's PowerShell history (PSReadLine's *_history.txt) that ran Install-MeshAgent or carry a
-          device group id (-GroupId, meshid=, or the id itself), since a hand-typed one holds the group id.
+          device group id (meshid=, or the id itself), since a hand-typed one holds the group id.
         - Defender's allow for detection 489403 (PUA:Win32/MeshCenAgent), a rejected suggestion, unless deskside's own
           record says deskside placed it.
     #>
@@ -940,7 +940,8 @@ function Remove-EnrollTrace {
             }
         }
     }
-    $patterns = @('Install-MeshAgent', '-GroupId', 'meshid=')
+    # Not -GroupId alone: other tools (Microsoft Graph's cmdlets) take a parameter by that name.
+    $patterns = @('Install-MeshAgent', 'meshid=')
     foreach ($p in $ProfileFolder) {
         $dir = Join-Path $p 'AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine'
         foreach ($h in @(Get-ChildItem -LiteralPath $dir -Filter '*_history.txt' -File -Force -ErrorAction SilentlyContinue)) {
