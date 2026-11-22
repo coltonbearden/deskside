@@ -323,6 +323,115 @@ function Get-SshPublicKeyFile {
     return $file
 }
 
+function Read-OpValue {
+    <# One op read. op prints nothing when its 1Password approval times out, so an empty or malformed answer throws. #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Ref, [Parameter(Mandatory)][string]$What, [string]$Pattern = '\S')
+    if ($Ref -notlike 'op://*') { throw "meshcentral.json has no 1Password reference for $What." }
+    $v = ((& op read $Ref) | Out-String).Trim()
+    if (-not $v -or $v -notmatch $Pattern) { throw "1Password did not return $What (approve 1Password's prompt for op, then run again)." }
+    return $v
+}
+
+function Get-UsbKitValue {
+    <#
+    .SYNOPSIS
+        The values a USB kit carries: server URL, device group id, the deskside-ssh public key and the helper's name.
+    .DESCRIPTION
+        Read each time from meshcentral.json and 1Password (groupRef, or proofGroupRef with -Proof); never kept here.
+    #>
+    [CmdletBinding()]
+    param($Settings = (Get-MeshSetting), [switch]$Proof)
+    $refName = if ($Proof) { 'proofGroupRef' } else { 'groupRef' }
+    $ref = [string]$Settings.$refName
+    $group = Read-OpValue -Ref $ref -What 'the device group id' -Pattern '^[A-Za-z0-9$@]{64}$'
+    $pub = Read-OpValue -Ref ([string]$Settings.sshPublicKeyRef) -What 'the deskside-ssh public key' -Pattern '^ssh-ed25519 [A-Za-z0-9+/=]+'
+    $pub = (($pub -split '\s+')[0..1] -join ' ') + ' deskside-ssh'
+    return [pscustomobject]@{
+        Values = [ordered]@{ serverUrl = [string]$Settings.serverUrl; groupId = $group; publicKey = $pub; helperName = (Get-HelperName -Settings $Settings) }
+        GroupRefName = $refName
+    }
+}
+
+function Get-UsbKitRoot {
+    <# The kit's folder: a removable drive's root (-Drive) or any folder (-Path, for tests and the Sandbox proof). #>
+    [CmdletBinding()]
+    param([string]$Drive, [string]$Path)
+    if ($Drive) {
+        $letter = $Drive.TrimEnd(':\').ToUpper()
+        if ($letter -notmatch '^[A-Z]$') { throw "-Drive takes a drive letter such as E:." }
+        $vol = Get-Volume -DriveLetter $letter -ErrorAction SilentlyContinue
+        if (-not $vol) { throw "There is no drive $($letter):." }
+        if ($vol.DriveType -ne 'Removable') { throw "Drive $($letter): isn't a removable drive (it is $($vol.DriveType)); deskside writes kits only to USB drives." }
+        return "$($letter):\"
+    }
+    if (-not $Path) { throw 'Name the USB drive with -Drive (or a folder with -Path).' }
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) { throw "The folder $Path doesn't exist." }
+    return (Resolve-Path -LiteralPath $Path).Path
+}
+
+function Assert-UsbKitTargetFree {
+    <#
+    Refuses a target that still holds a kit's values (this kit's or the older single-script kit), or the results of a
+    run that haven't been read back yet.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Root)
+    if (Test-Path -LiteralPath (Join-Path $Root 'deskside\values.json')) { throw 'This drive still holds a kit with its values. Read it back first (Read-DesksideUsbKit.ps1), which wipes them.' }
+    if (Test-Path -LiteralPath (Join-Path $Root 'deskside-enroll.ps1')) { throw 'This drive holds an older deskside kit, which may carry its values. Leave it alone; use another drive.' }
+    $rb = Join-Path $Root 'readback.txt'
+    if ((Test-Path -LiteralPath $rb) -and -not (Test-Path -LiteralPath (Join-Path $Root 'deskside\read-back.json'))) { throw 'This drive holds the results of a run that were not read back yet. Read it back first (Read-DesksideUsbKit.ps1).' }
+}
+
+function Find-UsbKitTrace {
+    <# How many of the kit's files still contain the text (the group id), and the total count of files looked at. #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$Text)
+    $files = @(Get-ChildItem -LiteralPath $Root -File -Force -ErrorAction SilentlyContinue) + @(Get-ChildItem -LiteralPath (Join-Path $Root 'deskside') -File -Recurse -Force -ErrorAction SilentlyContinue)
+    $hits = 0
+    foreach ($f in $files) {
+        if ($f.Length -gt 64MB) { continue }
+        # Both byte forms: a transcript can be UTF-16, the rest ASCII or UTF-8.
+        $bytes = [IO.File]::ReadAllBytes($f.FullName)
+        if ([Text.Encoding]::ASCII.GetString($bytes).Contains($Text) -or [Text.Encoding]::Unicode.GetString($bytes).Contains($Text)) { $hits++ }
+    }
+    return [pscustomobject]@{ Files = $files.Count; Hits = $hits }
+}
+
+function Remove-UsbKitValue {
+    <# Overwrites values.json with zeros and deletes it. On flash media the old blocks may survive; the group id is replaceable. #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param([Parameter(Mandatory)][string]$Root)
+    $p = Join-Path $Root 'deskside\values.json'
+    if (-not (Test-Path -LiteralPath $p)) { return $false }
+    if ($PSCmdlet.ShouldProcess('values.json', 'Overwrite and delete')) {
+        $len = (Get-Item -LiteralPath $p).Length
+        [IO.File]::WriteAllBytes($p, (New-Object byte[] $len))
+        Remove-Item -LiteralPath $p -Force
+    }
+    return $true
+}
+
+function ConvertFrom-UsbKitReadback {
+    <# The readback's plain findings, without the node id, account or dates: what may be shown on screen. #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Line)
+    $show = New-Object System.Collections.Generic.List[string]
+    # Each run of the kit appends a section that starts 'run: '; the last one is what the drive says now.
+    $start = 0
+    for ($i = 0; $i -lt $Line.Count; $i++) { if ($Line[$i] -like 'run: *') { $start = $i } }
+    $runs = @($Line | Where-Object { $_ -like 'run: *' }).Count
+    $show.Add("runs on this drive: $runs (showing the last)")
+    $Line = @($Line | Select-Object -Skip $start)
+    foreach ($l in $Line) {
+        if ($l -match '^(stopped|smart app control|agent signature|deskside|removed|step [^:]+|service [^:]+|port 22 listens on|values):') { $show.Add($l) }
+    }
+    $consents = @($Line | Where-Object { $_ -like 'consent: *' }).Count
+    $show.Add("consent scopes recorded: $consents")
+    $show.Add('node id in readback: ' + [bool](@($Line | Where-Object { $_ -match '^node: node//' }).Count))
+    return $show.ToArray()
+}
+
 function Get-HelperName {
     <# The name the person at the PC knows the helper by: meshcentral.json's helperName, never this repo. #>
     [CmdletBinding()]

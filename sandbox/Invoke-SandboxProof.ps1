@@ -16,6 +16,12 @@
     1Password by its "proofGroupRef" (a group that removes devices when they disconnect), and
     sandbox\Invoke-HostCheck.ps1 as the host check.
 
+    -UsbKit proves the USB kit instead (sandbox\kit-inner.ps1): New-DesksideUsbKit.ps1 -Proof builds a kit of the
+    committed HEAD into a folder mapped writable at C:\kit, the Sandbox runs it (stopped by a forced Smart App Control,
+    then for real, then again). -KitPath takes a kit built beforehand (an op approval from a background run timed out
+    twice on 2026-11-21 where the same read in the foreground worked). Afterwards read the kit folder back with
+    Read-DesksideUsbKit.ps1 -Path <kit> -Alias sandbox-proof -RecordsRoot <a temporary folder>.
+
     Only one Windows Sandbox can run at a time; close any other first.
 #>
 [CmdletBinding()]
@@ -26,6 +32,8 @@ param(
     [string]$GroupId,
     [scriptblock]$HostCheck,
     [switch]$Remote,
+    [switch]$UsbKit,
+    [string]$KitPath,
     [string]$WorkDir = (Join-Path $env:TEMP 'deskside-proof'),
     [int]$TimeoutMinutes = 60
 )
@@ -70,6 +78,25 @@ $realPub = $null
 if ($Remote) { $realPub = (Get-Content -LiteralPath (Get-SshPublicKeyFile -Settings $ms) -Raw).Trim() }
 [ordered]@{ source = $Source; ref = $Ref; serverUrl = $ServerUrl; groupId = $GroupId; publicKey = $pub; realPublicKey = $realPub } | ConvertTo-Json | Set-Content (Join-Path $in 'proof-config.json')
 
+$inner = 'proof-inner.ps1'
+$kitMap = ''
+if ($UsbKit) {
+    # The kit stands in for a USB drive: built here from 1Password, run in the Sandbox, read back here.
+    # On 2026-11-21 op's approval timed out twice from a run left in the background and worked at once in the
+    # foreground: -KitPath takes a kit built beforehand, in the helper's own window.
+    if ($KitPath) { $kitDir = (Resolve-Path -LiteralPath $KitPath).Path }
+    else {
+        $kitDir = Join-Path $WorkDir 'kit'
+        New-Item -ItemType Directory -Force -Path $kitDir | Out-Null
+        & (Join-Path $root 'scripts\console\New-DesksideUsbKit.ps1') -Path $kitDir -Proof
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $kitDir 'deskside\values.json'))) { throw "No built kit with values in $kitDir." }
+    Copy-Item (Join-Path $PSScriptRoot 'kit-inner.ps1') $in
+    $inner = 'kit-inner.ps1'
+    $kitMap = "<MappedFolder><HostFolder>$kitDir</HostFolder><SandboxFolder>C:\kit</SandboxFolder><ReadOnly>false</ReadOnly></MappedFolder>"
+    $HostCheck = $null
+}
+
 $wsb = @"
 <Configuration>
   <Networking>Enable</Networking>
@@ -77,8 +104,9 @@ $wsb = @"
   <MappedFolders>
     <MappedFolder><HostFolder>$in</HostFolder><SandboxFolder>C:\in</SandboxFolder><ReadOnly>true</ReadOnly></MappedFolder>
     <MappedFolder><HostFolder>$out</HostFolder><SandboxFolder>C:\out</SandboxFolder><ReadOnly>false</ReadOnly></MappedFolder>
+    $kitMap
   </MappedFolders>
-  <LogonCommand><Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\in\proof-inner.ps1</Command></LogonCommand>
+  <LogonCommand><Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\in\$inner</Command></LogonCommand>
 </Configuration>
 "@
 $wsbPath = Join-Path $WorkDir 'proof.wsb'

@@ -2,7 +2,8 @@
 BeforeDiscovery {
     $root = Split-Path -Parent $PSScriptRoot
     $script:PcScripts = @(Get-ChildItem (Join-Path $root 'scripts') -Recurse -Include *.ps1, *.psm1 | Where-Object { $_.FullName -notmatch '\\scripts\\console\\' } |
-        ForEach-Object { @{ Name = $_.FullName.Substring($root.Length + 1); Path = $_.FullName } }) + @(@{ Name = 'bootstrap.ps1'; Path = (Join-Path $root 'bootstrap.ps1') })
+        ForEach-Object { @{ Name = $_.FullName.Substring($root.Length + 1); Path = $_.FullName } }) + @(@{ Name = 'bootstrap.ps1'; Path = (Join-Path $root 'bootstrap.ps1') }) +
+        @(Get-ChildItem (Join-Path $root 'usb-kit') -Recurse -Include *.ps1, *.cmd | ForEach-Object { @{ Name = $_.FullName.Substring($root.Length + 1); Path = $_.FullName } })
     $changeNames = 'Install-Profile', 'Install-WAU', 'Set-Baseline', 'Remove-Apps', 'Install-MeshAgent', 'Enable-LoopbackSsh', 'Install-HelpButton'
     $script:ChangeScripts = @(Get-ChildItem (Join-Path $root 'scripts') -Recurse -Filter *.ps1 | Where-Object { $changeNames -contains $_.BaseName } |
         ForEach-Object { @{ Name = $_.BaseName; Path = $_.FullName } })

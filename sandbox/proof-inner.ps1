@@ -93,10 +93,13 @@ Invoke-Step 'everyone-settings' {
     $p = Get-Content (Join-Path $app 'catalog\profiles\everyone.json') -Raw | ConvertFrom-Json
     $items = (Get-Content (Join-Path $app 'catalog\settings.json') -Raw | ConvertFrom-Json).items | Where-Object { $p.settings -contains $_.id }
     $bad = @($items | Where-Object { -not (Test-DesksideSettingCompliant $_) } | ForEach-Object { $_.id })
-    # Defender doesn't run in Windows Sandbox, so its PUA setting can't be applied or read there.
+    # Onboarding applied defender-pua with the rest, but Defender doesn't run in Windows Sandbox, so the setting can't be
+    # read back here (and Test-DesksideSettingCompliant counts an unreadable Defender as compliant). Record what Defender
+    # itself says, so the result shows why rather than repeating this comment.
     $bad = @($bad | Where-Object { $_ -ne 'defender-pua' })
+    $mp = try { $s = Get-MpComputerStatus -ErrorAction Stop; "Defender AMServiceEnabled $($s.AMServiceEnabled)" } catch { 'Defender: ' + $_.Exception.Message }
     Assert-That ($bad.Count -eq 0) ("not applied: " + ($bad -join ', '))
-    "applied: " + (@($items).Count) + " (defender-pua not provable in Sandbox)"
+    "applied: " + (@($items).Count) + " (defender-pua not provable in Sandbox; $mp)"
 }
 Invoke-Step 'install-undo-file' {
     $i = Get-ChildItem 'C:\ProgramData\deskside\data\runs' -Directory -Filter '*-install-everyone' | Select-Object -First 1

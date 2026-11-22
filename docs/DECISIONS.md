@@ -105,3 +105,36 @@ the console's `Send-RemoteNotice`; the helper's name is `helperName` in the priv
 `deskside-ssh` public key (`sshPublicKeyRef` in the private store) to `%LOCALAPPDATA%\deskside\deskside-ssh.pub` and
 passes it with `IdentitiesOnly=yes`, 1Password's documented way to pick a key. The Sandbox proof's throwaway key path
 (`DESKSIDE_SSH_IDENTITY`) stays, and one host step uses the real key.
+
+## D-014 (2026-11-21) — A PC enrolls from a USB drive, and stops when Smart App Control would block the agent
+
+The first real enrollment failed twice. A 64-character group id typed by hand by the helper had four characters
+wrong (the server answered "Unauthorized"). Then Smart App Control blocked the agent, which is signed by the server's
+own certificate.
+
+[Colton's choice, 2026-11-21] When Smart App Control is on and the agent isn't signed by a certificate Windows trusts,
+the kit stops, says why and changes nothing ("Stop and say why"). The agent gets signed properly on the server's side.
+Smart App Control is not turned off.
+
+[Claude's calls]
+- **The values live in a separate `values.json` beside a kit script that is byte-identical to the repo's.** The tested
+  code is then the code that runs, and the wipe deletes one file.
+- **The drive carries deskside itself** (a `git archive` zip of HEAD, used through bootstrap's
+  `DESKSIDE_SOURCE_ZIP`). So even a PC without deskside needs no typed line, and a PC with an old copy gets the current
+  Install-MeshAgent.
+- **The kit changes nothing until the work-or-school and Smart App Control checks pass.** So a stopped run also leaves
+  an earlier attempt's history line in place. A group id that got out is replaced on the server instead.
+- **The read-back scans the drive for the group id** after wiping, and reports a count.
+- **The kit runs `Install-MeshAgent.ps1` in its own process.** Windows PowerShell's event log keeps a child
+  `powershell.exe`'s whole command line (`HostApplication`, events 400 and 403), which would leave the group id on the
+  PC. The Sandbox proof checks the PowerShell and Application logs for it.
+
+Defender: the everyone profile turns on "Block potentially unwanted apps", and Defender's catalog lists
+`PUA:Win32/MeshCenAgent` (489403). On the T14 (Defender on, PUA in audit mode, definitions of 2026-11-21) the
+downloaded agent stayed on disk. A file scan found no threats, and Defender logged no event, which audit mode would
+have done on a match. So no allow is added. The kit removes any 489403 allow it finds, unless deskside's own
+`defender-allow.json` says deskside placed it. Windows Sandbox can't answer this question: Defender doesn't run there
+(D-007).
+
+Consequence: `usb-kit/`, `New-DesksideUsbKit.ps1`, `Read-DesksideUsbKit.ps1`, `Remove-EnrollTrace`,
+`Get-SmartAppControlState`, and the enroll skill. The Sandbox proof gains `-UsbKit`.
