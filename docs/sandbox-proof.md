@@ -82,6 +82,24 @@ and `host:ssh-notice` (that run's record says the notice reached the one signed-
   `deskside-route-*` folder left on the helper's machine. Earlier runs that day: the first two failed only notice-seen
   (the closing message queued behind an open first one, found by that step), the third only on a 1Password prompt
   nobody approved.
+- 2026-11-21, `-UsbKit -KitPath` with a kit of 086d40f built by `New-DesksideUsbKit.ps1 -Path … -Proof` (Proofs group):
+  **7 of 7 passed.**
+  - plant-traces: a history line with the group id and a `deskside-mesh-*` folder.
+  - kit-stops-on-sac: Smart App Control forced on, exit 1, the plain message in `readback.txt`, no
+    `C:\ProgramData\deskside`, traces and values untouched.
+  - kit-first-visit: 16 minutes from a clean Windows. Bootstrap from the drive's zip, the agent, help button and SSH;
+    1 leftover folder and 1 history line removed; values.json gone.
+  - kit-again: values put back; scripts refreshed from the drive, agent still running, values gone again.
+  - remove-remote-help: nothing left.
+
+  Then `Read-DesksideUsbKit.ps1 -Path … -RecordsRoot <temp>` saved both files and found the group id in 0 of the 8
+  files left, the log included. The Sandbox reports Smart App Control as Eval, and its Defender can't be read, so the
+  489403 allow step reported "could not read Defender".
+
+`-UsbKit` runs `sandbox/kit-inner.ps1` with the kit folder mapped writable at `C:\kit`, standing in for the drive. Build
+the kit first with `-KitPath`: 1Password approves op per terminal, so a proof left running in the background can't
+build the kit or read it back itself.
+
 `-Remote` takes the server and the Proofs group from the private records store. The host half is
 `sandbox/Invoke-HostCheck.ps1`: a throwaway records store with only the Sandbox in it, the proof's throwaway key
 (`DESKSIDE_SSH_IDENTITY`), and Claude Code allowed only the console's runner and reading.

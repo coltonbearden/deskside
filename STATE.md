@@ -20,12 +20,21 @@
   Assistant; "nobody signed in" and the fix for long announced runs (D-012, after the proof) are covered by tests
   only. Not yet run anywhere: the developer profile (WSL needs nested virtualization), `Remove-DesksideDevice` against
   a real device, the console's `onboard`/`undo` skills remotely.
+- **USB kit (D-014, 2026-11-21):** a PC enrolls from a drive with nothing typed:
+  - `New-DesksideUsbKit.ps1 -Drive E:` builds the drive;
+  - at the PC, `START HERE.cmd` runs it;
+  - `Read-DesksideUsbKit.ps1 -Drive E: -Alias <alias>` reads it back and wipes it.
+
+  It stops, changing nothing, on a work or school PC or when Smart App Control would block the agent. The agent is
+  signed by the server's own certificate until the server signs it properly. The Sandbox kit proof passed 7 of 7
+  (docs/sandbox-proof.md). Not yet run on a real USB drive or a real PC.
 - **Waiting on the owner:** scheduling the health sweep beside the server (the server's stack repo); the homelab
   records' handoff kickoffs.
 - **How a failure reaches the owner:** CI failures show on GitHub. The health sweep (health/Invoke-HealthSweep.ps1)
   pushes to an uptime monitor whose downs become tasks; it's scheduled by the homelab's stack repo beside the
   MeshCentral server, not from here.
-- **Next:** the first real PC, with its owner's yes (`enroll` skill); the health sweep on the server's node.
+- **Next:** the first real PC, with its owner's yes (`enroll` skill, by USB kit), once the server serves agents signed
+  with a certificate Windows trusts; the health sweep on the server's node.
 
 ## Proved on the first real PC, not in Windows Sandbox
 
