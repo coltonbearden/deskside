@@ -12,6 +12,41 @@
 
 - **First contact** is in person or over Quick Assist (the helper needs a Microsoft account; the person sharing
   doesn't sign in). Nothing is installed before then.
+- **The USB kit** (`usb-kit/`) does the whole enrollment from a drive with nothing typed. The values are a 64-character
+  group id, a server address and a key, and typing them by hand failed in practice.
+  - `scripts/console/New-DesksideUsbKit.ps1 -Drive E:` writes:
+    - `START HERE.cmd`;
+    - deskside at the committed HEAD (a zip, plus the bootstrap, the common module and the kit script from that commit);
+    - `deskside/kit.json` (the commit);
+    - `deskside/values.json`: the server, group id, `deskside-ssh` public key and helper's name, read from
+      `meshcentral.json` and 1Password each time and printed nowhere.
+
+    It refuses a drive that isn't removable, one that still holds a kit's values or an older single-script kit, and
+    results not yet read back.
+  - On the PC the kit elevates, then checks, in this order, before it changes anything:
+    1. Work or school: it stops.
+    2. Smart App Control (Defender's `SmartAppControlState`, then the code-integrity policy value): when it is on and
+       the downloaded agent's Authenticode status isn't `Valid`, the kit stops, says why and changes nothing.
+
+    After that it puts deskside on the PC from the drive: the usual first visit with the owner's prompts, or a refresh
+    of the scripts when deskside is there already. Then it removes an earlier attempt's leftovers:
+    - `deskside-mesh-*` and `deskside-check-*` temp folders;
+    - PowerShell history lines that ran `Install-MeshAgent` or hold the group id;
+    - Defender's allow for detection 489403, unless deskside placed it.
+
+    Then it runs the remote consent, the agent, the help button and SSH. It writes `readback.txt` and `log.txt` on the
+    drive and deletes `values.json`. No value is ever on a command line of its own, so none reaches the transcript
+    header.
+  - `scripts/console/Read-DesksideUsbKit.ps1 -Drive E: -Alias <alias>`:
+    - saves both files to the records store (`devices/<alias>/enroll/<stamp>/`);
+    - overwrites and deletes `values.json` if the run left it;
+    - checks every file of the kit for the group id, and fails if one still holds it;
+    - shows only the plain findings, never the node id or account.
+
+    On flash media a deleted file's old blocks can survive wear-levelling, so a lost drive is handled by replacing the
+    group's enroll id. The agent's own `MeshAgent.msh` holds its group by design; *Remove remote help* removes it.
+  - `Install-MeshAgent.ps1` makes the same Smart App Control check after the download and before running it, and
+    always removes its download (try/finally).
 - **The agent** comes from the helper's own MeshCentral server and device group:
   `scripts/remote/Install-MeshAgent.ps1 -ServerUrl https://<server> -GroupId <mesh id>`. It downloads the group's
   64-bit agent (`/meshagents?id=4&meshid=...&installflags=0`), runs `-fullinstall` and leaves a *Remove remote help*

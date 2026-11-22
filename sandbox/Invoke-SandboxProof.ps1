@@ -18,8 +18,9 @@
 
     -UsbKit proves the USB kit instead (sandbox\kit-inner.ps1): New-DesksideUsbKit.ps1 -Proof builds a kit of the
     committed HEAD into a folder mapped writable at C:\kit, the Sandbox runs it (stopped by a forced Smart App Control,
-    then for real, then again), and this machine reads it back with Read-DesksideUsbKit.ps1 into a temporary records
-    folder. 1Password is asked at the start (the kit's values) and when the kit is read back.
+    then for real, then again). -KitPath takes a kit built beforehand (1Password asks for approval per terminal, so an
+    unattended run can't build one). Afterwards read the kit folder back with
+    Read-DesksideUsbKit.ps1 -Path <kit> -Alias sandbox-proof -RecordsRoot <a temporary folder>.
 
     Only one Windows Sandbox can run at a time; close any other first.
 #>
@@ -32,6 +33,7 @@ param(
     [scriptblock]$HostCheck,
     [switch]$Remote,
     [switch]$UsbKit,
+    [string]$KitPath,
     [string]$WorkDir = (Join-Path $env:TEMP 'deskside-proof'),
     [int]$TimeoutMinutes = 60
 )
@@ -80,22 +82,19 @@ $inner = 'proof-inner.ps1'
 $kitMap = ''
 if ($UsbKit) {
     # The kit stands in for a USB drive: built here from 1Password, run in the Sandbox, read back here.
-    $kitDir = Join-Path $WorkDir 'kit'
-    $recDir = Join-Path $WorkDir 'records'
-    New-Item -ItemType Directory -Force -Path $kitDir, $recDir | Out-Null
-    & (Join-Path $root 'scripts\console\New-DesksideUsbKit.ps1') -Path $kitDir -Proof
+    # 1Password approves op per terminal, so a run left in the background can't ask it: build the kit first in the
+    # helper's own window (-KitPath) when this runs unattended.
+    if ($KitPath) { $kitDir = (Resolve-Path -LiteralPath $KitPath).Path }
+    else {
+        $kitDir = Join-Path $WorkDir 'kit'
+        New-Item -ItemType Directory -Force -Path $kitDir | Out-Null
+        & (Join-Path $root 'scripts\console\New-DesksideUsbKit.ps1') -Path $kitDir -Proof
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $kitDir 'deskside\values.json'))) { throw "No built kit with values in $kitDir." }
     Copy-Item (Join-Path $PSScriptRoot 'kit-inner.ps1') $in
     $inner = 'kit-inner.ps1'
     $kitMap = "<MappedFolder><HostFolder>$kitDir</HostFolder><SandboxFolder>C:\kit</SandboxFolder><ReadOnly>false</ReadOnly></MappedFolder>"
-    $readScript = Join-Path $root 'scripts\console\Read-DesksideUsbKit.ps1'
-    $outDir = $out
-    $HostCheck = {
-        $o = & $readScript -Path $kitDir -Alias 'sandbox-proof' -RecordsRoot $recDir 6>&1 | Out-String
-        $o | Set-Content (Join-Path $outDir 'read-back.txt')
-        $ok = $o -match 'group id still on the drive: 0 of' -and $o -match 'values\.json: already removed by the kit'
-        ([pscustomobject]@{ step = 'read-back'; ok = $ok; time = (Get-Date).ToString('HH:mm:ss'); detail = (($o -split "`r?`n" | Where-Object { $_ }) -join '; ') } | ConvertTo-Json -Compress) |
-            Add-Content (Join-Path $outDir 'host-steps.jsonl')
-    }.GetNewClosure()
+    $HostCheck = $null
 }
 
 $wsb = @"
